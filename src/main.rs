@@ -24,6 +24,7 @@ const USAGE: &str =
   jev-router statusline             status-line command: the rung this session is on
   jev-router dashboard [--port N]   local web dashboard of decisions (default port 8765)
   jev-router tune [--apply|--reset] auto-tuning from feedback: dry run, apply now, or reset
+  jev-router --version              print the version
 
 Decisions are appended as JSON lines to $CLAUDE_ROUTER_LOG
 (default ~/.local/share/claude-router/decisions.jsonl).";
@@ -311,6 +312,7 @@ fn main() {
             }
         }
         Some("-h" | "--help") => println!("{USAGE}"),
+        Some("-V" | "--version") => println!("jev-router {}", env!("CARGO_PKG_VERSION")),
         _ => {
             eprintln!("{USAGE}");
             exit(2);

@@ -25,7 +25,17 @@ flowchart LR
 
 ## Install
 
-You'll need Rust, Claude Code and a TypeSafe API key.
+You'll need Claude Code and a TypeSafe API key.
+
+**Prebuilt binary** (Linux x86_64 with glibc 2.39+, such as Ubuntu 24.04 or later). Download it from [Releases](https://github.com/xafold/jev-router/releases):
+
+```bash
+curl -L https://github.com/xafold/jev-router/releases/latest/download/jev-router-x86_64-linux.tar.gz | tar xz -C ~/.local/bin
+mkdir -p ~/.config/jev-router && echo "TYPESAFE_API_KEY=your-key" > ~/.config/jev-router/.env
+jev-router --version
+```
+
+**From source** (needs Rust):
 
 ```bash
 git clone https://github.com/xafold/jev-router && cd jev-router
@@ -56,6 +66,10 @@ The dashboard is a local page that shows:
 - roughly how much the router saved compared with using Opus for everything.
 
 You can rate each choice as right, too weak or too strong. After about 20 ratings, the router quietly adjusts itself.
+
+## Versioning
+
+Versions follow [semver](https://semver.org). The current version is in `Cargo.toml`, and `jev-router --version` prints it. Each release is tagged `vX.Y.Z` and comes with a binary.
 
 ## Tests
 

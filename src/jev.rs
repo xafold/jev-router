@@ -77,12 +77,16 @@ pub fn build_state(prompt: &str, history: &[Value]) -> Value {
     json!({"history": history, "latest": clip(prompt)})
 }
 
-/// Load the repo's .env (next to the crate) without overriding the real environment.
+/// Load .env without overriding the real environment: ~/.config/jev-router/.env (for a
+/// downloaded binary), then the repo's .env next to the crate (for a source build).
 pub fn load_env() {
-    let env = concat!(env!("CARGO_MANIFEST_DIR"), "/.env");
-    let Ok(text) = fs::read_to_string(env) else {
-        return;
-    };
+    let config = crate::util::home().join(".config/jev-router/.env");
+    let repo = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/.env"));
+    let text: String = [config, repo]
+        .iter()
+        .filter_map(|p| fs::read_to_string(p).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
     for line in text.lines() {
         if line.trim_start().starts_with('#') {
             continue;
