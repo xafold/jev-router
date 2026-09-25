@@ -9,7 +9,7 @@
   color-scheme: light;
   --page: #f5f4f1; --surface: #fcfcfb; --border: #e4e2dc; --grid: #ecebe7; --band: #efeeea;
   --text: #0b0b0b; --text-2: #52514e; --muted: #75746e;
-  --haiku: #2a78d6; --sonnet: #eb6834; --opus: #1baf7a; --accent: #2a78d6; --baseline: #b4b2a9;
+  --haiku: #2a78d6; --sonnet: #eb6834; --opus: #1baf7a; --fable: #4a3aa7; --accent: #2a78d6; --baseline: #b4b2a9;
   --critical: #d03b3b; --good: #0a7d0a; --warning: #b77900; --focus: #2a78d6;
 }
 @media (prefers-color-scheme: dark) {
@@ -17,14 +17,14 @@
     color-scheme: dark;
     --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
     --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
-    --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
+    --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --fable: #9085e9; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
   --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
-  --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
+  --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --fable: #9085e9; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -267,11 +267,22 @@ function s(tag, attrs, ...kids) {
 }
 
 // --- Plain-language vocabulary ----------------------------------------------------------
-const FAMILIES = [
-  { key: "haiku", label: "Haiku 4.5", color: "var(--haiku)" },
-  { key: "sonnet", label: "Sonnet 5", color: "var(--sonnet)" },
-  { key: "opus", label: "Opus 5.5", color: "var(--opus)" },
-];
+// Families shown in charts. Labels are the models each family runs on now (models.rs picks
+// the newest); Fable appears only once it is turned on or has been used. Set in load().
+let FAMILIES = [];
+const FAMILY_KEYS = ["haiku", "sonnet", "opus", "fable"];
+// Rung names in older logs carry versions ("opus-5.5/high"); rungs are family/effort now.
+const normRung = (r) => (r ? `${String(r).split(/[-/]/)[0]}${String(r).includes("/") ? `/${String(r).split("/")[1]}` : ""}` : r);
+function normalize(decisions, usage) {
+  for (const d of decisions) {
+    if (d.final && d.final.rung) d.final.rung = normRung(d.final.rung);
+    for (const t of Object.values(d.trees || {})) t.vote = normRung(t.vote);
+    if (d.votes) d.votes = d.votes.map(normRung);
+    if (d.median) d.median = normRung(d.median);
+    if (d.facts && d.facts.previous_rung) d.facts.previous_rung = normRung(d.facts.previous_rung);
+  }
+  for (const u of usage) if (u.rung) u.rung = normRung(u.rung);
+}
 const QLABEL = {
   clarified: "The request is clear enough to start",
   trivial: "It's a small, simple change",
@@ -297,6 +308,7 @@ function reasonSentence(w) {
   if ((m = w.match(/^median of votes: (.+)$/))) return `The five decision trees' middle vote was ${friendly(m[1])}.`;
   if ((m = w.match(/^trees disagree \(spread (\d+) rungs\): \+1 -> (.+)$/))) return `The trees disagreed a lot, so it picked one step stronger to be safe: ${friendly(m[2])}.`;
   if (w.startsWith("needs clarification")) return "Your message looked unclear, so the cheapest model asks clarifying questions first.";
+  if ((m = w.match(/^hardest case \((.+) tree\): floor -> (.+)$/))) return `The ${m[1]} tree reached its hardest case on clear answers, so it went to ${friendly(m[2])}.`;
   if ((m = w.match(/^security-sensitive: floor -> (.+)$/))) return `Security work always gets at least ${friendly(m[1])}.`;
   if ((m = w.match(/^concurrency: floor -> (.+)$/))) return `Concurrency work always gets at least ${friendly(m[1])}.`;
   if ((m = w.match(/^last answer \((.+)\) failed: floor -> (.+)$/))) return `The previous answer (from ${friendly(m[1])}) didn't work, so it moved to a stronger option: ${friendly(m[2])}.`;
@@ -307,6 +319,7 @@ function shortReason(d) {
   if (!d.final) return "couldn't reach Jev; kept the previous model";
   const w = (d.why || []).slice(1).map((x) => x.split(":")[0]).pop() || "";
   if (w.startsWith("needs clarification")) return "unclear, so it asks first";
+  if (w.startsWith("hardest case")) return "hardest case, Fable";
   if (w.startsWith("security")) return "security rule";
   if (w.startsWith("concurrency")) return "concurrency rule";
   if (w.startsWith("last answer")) return "previous answer failed";
@@ -336,9 +349,13 @@ function ago(ts) {
 }
 function countBy(xs, f) { const m = new Map(); for (const x of xs) { const k = f(x); m.set(k, (m.get(k) || 0) + 1); } return m; }
 
+// A model newer than this price list is priced like its family's newest listed model.
 function priceFor(model) {
-  const P = S.meta.pricing, key = Object.keys(P).sort((a, b) => b.length - a.length).find((k) => (model || "").startsWith(k));
-  return key ? P[key] : null;
+  const P = S.meta.pricing, m = model || "", key = Object.keys(P).sort((a, b) => b.length - a.length).find((k) => m.startsWith(k));
+  if (key) return P[key];
+  const family = FAMILY_KEYS.find((f) => m.startsWith(`claude-${f}-`));
+  const same = family && Object.keys(P).find((k) => k.startsWith(`claude-${family}-`));
+  return same ? P[same] : null;
 }
 function tokensOf(u) { return (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0); }
 function costOf(u, p) {
@@ -584,7 +601,7 @@ function pageMessages() {
   return [h("section", { class: "card" }, h("h2", { text: `${fmt(ds.length)} messages` }), mixBar(ds), messageList(ds))];
 }
 
-const RAIL = [["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
+const RAIL = [["hardest case", "hardest case → Fable"], ["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
   ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["context tokens", "long chat, no downgrade"]];
 const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design" };
 const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : ""}`;
@@ -750,7 +767,7 @@ function pageImprove() {
       [QLABEL[r.q.key] || r.q.key, r.share >= 0.3 ? "Over 30%: reword it in router.rs (QUESTIONS)" : "answered 0.35–0.65"]))
       : h("p", { class: "muted", text: "Jev was sure on every question." }));
 
-  const RULES = { "needs clarification": "Unclear, ask", "security-sensitive": "Security", concurrency: "Concurrency", "last answer": "Last failed", "trees disagree": "Disagree +1", "~": "Long chat" };
+  const RULES = { "hardest case": "Hardest → Fable", "needs clarification": "Unclear, ask", "security-sensitive": "Security", concurrency: "Concurrency", "last answer": "Last failed", "trees disagree": "Disagree +1", "~": "Long chat" };
   const rule = (w) => { const k = Object.keys(RULES).find((p) => w.startsWith(p)); return k ? RULES[k] : w.split(":")[0]; };
   const fired = [...countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule)].sort((a, b) => b[1] - a[1]);
   const rules = card("Rules fired", null,
@@ -807,10 +824,14 @@ async function load() {
     const get = (p) => fetch(p).then((r) => { if (!r.ok) throw new Error(`${p}: ${r.status}`); return r.json(); });
     const [decisions, usage, meta, feedback, proxy, tuning] = await Promise.all(["/api/decisions", "/api/usage", "/api/meta", "/api/feedback", "/api/proxy", "/api/tuning"].map(get));
     const first = !S.meta;
+    normalize(decisions, usage);
     Object.assign(S, { decisions, usage, meta, feedback, proxy, tuning });
+    const usedFable = decisions.some((d) => familyOf(finalOf(d)) === "fable");
+    FAMILIES = FAMILY_KEYS.filter((k) => k !== "fable" || meta.fable || usedFable).map((k) => ({
+      key: k, label: ((meta.models.families || {})[k] || {}).name || k, color: `var(--${k})` }));
     fillSelect("f-source", [...new Set(decisions.map((d) => d.source))].sort());
     fillSelect("f-project", [...new Set(decisions.map((d) => d.cwd).filter(Boolean))].sort(), project);
-    fillSelect("f-rung", meta.ladder.map((r) => r.name), friendly);
+    fillSelect("f-rung", meta.ladder.map((r) => r.name).filter((r) => FAMILIES.some((f) => f.key === familyOf(r))), friendly);
     if (first) {
       fillSelect("f-baseline", ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"], (k) => `${meta.pricing[k].name} for everything`, null);
       $("f-baseline").value = store.get("jev-baseline", "claude-opus-5-5");

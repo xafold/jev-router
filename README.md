@@ -2,9 +2,12 @@
 
 Automatic model and effort switching for [Claude Code](https://claude.com/claude-code). [TypeSafe Jev](https://docs.typesafe.ai) routes each message you send:
 
-- **Haiku 4.5** for small questions;
-- **Sonnet 5** (low, medium or high effort) for everyday work;
-- **Opus 5.5** (medium, high, xhigh or max effort) for hard or risky work.
+- **Haiku** for small questions;
+- **Sonnet** (low, medium or high effort) for everyday work;
+- **Opus** (medium, high, xhigh or max effort) for hard or risky work;
+- **Fable** (high or max effort) for the hardest work, only if you turn it on (see below).
+
+Each family runs on its newest model (Haiku 4.5, Sonnet 5, Opus 5.5 and Fable 5.1 today), and a newer release is picked up without updating jev-router.
 
 ## Architecture
 
@@ -53,6 +56,33 @@ jev-router log                  # recent decisions
 ```
 
 To choose a model yourself, pick any model in `/model`. Pick **Jev Router** to go back to automatic.
+
+### Fable tier (off by default)
+
+Fable is Anthropic's most capable model, and it costs about 2.5 times as much as Opus per token. To let the router use it:
+
+```bash
+jev-router claude --fable on    # saved: later sessions keep it on
+jev-router claude --fable off   # back to Opus as the top model
+```
+
+With Fable on, the decision trees change as follows:
+- The two hardest tree outcomes vote Fable (high effort) instead of Opus xhigh. These are an open-ended design that spans several parts, and a concurrency fix that already failed.
+- If a tree reaches one of those outcomes on clear answers, the message goes to Fable. If Jev was unsure on the way, it doesn't.
+- If an answer from Opus didn't work, the retry goes to Fable. The top rung is Fable max.
+- Everything else routes exactly as it does with Fable off. Unclear requests still go to Haiku first to ask questions, and security or concurrency work still gets at least Opus.
+
+Fable needs 30-day data retention, so it returns an error on zero-data-retention organizations.
+
+### Models
+
+```bash
+jev-router models    # the model each family runs on, and where that came from
+```
+
+Once a day, the proxy calls the Anthropic Models API with the credentials Claude Code already uses. It picks the newest Haiku, Sonnet, Opus and Fable, along with the effort levels and thinking modes each one accepts. The result is cached in `~/.local/share/claude-router/models.json`. If the lookup fails, jev-router uses the built-in models above and tries again an hour later. To keep the built-in models, set `JEV_ROUTER_MODELS=builtin`.
+
+The dashboard prices a model that isn't on its price list like the newest listed model of the same family, so costs for a brand-new model are an estimate.
 
 ## Dashboard
 

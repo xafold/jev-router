@@ -4,54 +4,35 @@
 use serde_json::{json, Map, Value};
 
 pub struct Rung {
+    /// Family + effort, e.g. "opus/high". Versions are not part of the name: the family's
+    /// current model comes from models.rs, so a new Opus is picked up without a release.
     pub name: &'static str,
-    pub model: &'static str,
-    /// None for Haiku 4.5, which takes neither effort nor adaptive thinking.
+    pub family: &'static str,
+    /// None for the Haiku rung: no effort param, the cheapest option.
     pub effort: Option<&'static str>,
 }
 
-/// Cheapest -> strongest.
-pub const LADDER: [Rung; 8] = [
+const fn rung(name: &'static str, family: &'static str, effort: Option<&'static str>) -> Rung {
     Rung {
-        name: "haiku-4.5",
-        model: "claude-haiku-4-5",
-        effort: None,
-    },
-    Rung {
-        name: "sonnet-5/low",
-        model: "claude-sonnet-5",
-        effort: Some("low"),
-    },
-    Rung {
-        name: "sonnet-5/medium",
-        model: "claude-sonnet-5",
-        effort: Some("medium"),
-    },
-    Rung {
-        name: "sonnet-5/high",
-        model: "claude-sonnet-5",
-        effort: Some("high"),
-    },
-    Rung {
-        name: "opus-5.5/medium",
-        model: "claude-opus-5-5",
-        effort: Some("medium"),
-    },
-    Rung {
-        name: "opus-5.5/high",
-        model: "claude-opus-5-5",
-        effort: Some("high"),
-    },
-    Rung {
-        name: "opus-5.5/xhigh",
-        model: "claude-opus-5-5",
-        effort: Some("xhigh"),
-    },
-    Rung {
-        name: "opus-5.5/max",
-        model: "claude-opus-5-5",
-        effort: Some("max"),
-    },
+        name,
+        family,
+        effort,
+    }
+}
+
+/// Cheapest -> strongest. The two Fable rungs exist only with `--fable on`; without it
+/// the ladder ends at Opus max, exactly as before.
+pub const LADDER: [Rung; 10] = [
+    rung("haiku", "haiku", None),
+    rung("sonnet/low", "sonnet", Some("low")),
+    rung("sonnet/medium", "sonnet", Some("medium")),
+    rung("sonnet/high", "sonnet", Some("high")),
+    rung("opus/medium", "opus", Some("medium")),
+    rung("opus/high", "opus", Some("high")),
+    rung("opus/xhigh", "opus", Some("xhigh")),
+    rung("opus/max", "opus", Some("max")),
+    rung("fable/high", "fable", Some("high")),
+    rung("fable/max", "fable", Some("max")),
 ];
 pub const H: usize = 0;
 pub const S_LOW: usize = 1;
@@ -61,9 +42,53 @@ pub const O_MED: usize = 4;
 pub const O_HIGH: usize = 5;
 pub const O_XHIGH: usize = 6;
 pub const O_MAX: usize = 7;
+pub const F_HIGH: usize = 8;
+pub const F_MAX: usize = 9;
+/// Tree leaf for the hardest cases: Opus xhigh, or Fable high when Fable is on.
+pub const TOP: usize = usize::MAX;
 
+/// Strongest rung allowed.
+pub fn top(fable: bool) -> usize {
+    if fable {
+        F_MAX
+    } else {
+        O_MAX
+    }
+}
+
+fn leaf(rank: usize, fable: bool) -> usize {
+    match rank {
+        TOP if fable => F_HIGH,
+        TOP => O_XHIGH,
+        r => r,
+    }
+}
+
+/// Also accepts the versioned names older logs use ("haiku-4.5", "opus-5.5/high").
 pub fn rank_of(name: &str) -> Option<usize> {
-    LADDER.iter().position(|r| r.name == name)
+    let (head, effort) = name
+        .split_once('/')
+        .map_or((name, None), |(h, e)| (h, Some(e)));
+    let family = head.split('-').next().unwrap_or(head);
+    LADDER
+        .iter()
+        .position(|r| r.family == family && r.effort == effort)
+}
+
+/// The concrete model and effort a rung sends right now.
+pub fn resolve(rank: usize) -> (crate::models::Model, Option<String>) {
+    let rung = &LADDER[rank];
+    let model = crate::models::model(rung.family);
+    let effort = rung
+        .effort
+        .and_then(|e| crate::models::effort_for(&model, e));
+    (model, effort)
+}
+
+/// "Opus 5.5 · high", for the status line and the dashboard.
+pub fn label(rank: usize) -> String {
+    let (model, effort) = resolve(rank);
+    effort.map_or(model.name.clone(), |e| format!("{} · {e}", model.name))
 }
 
 pub const NOUL_YES: f64 = 0.5;
@@ -112,7 +137,8 @@ fn split(key: &'static str, yes: Node, no: Node) -> Node {
 }
 use Node::Leaf;
 
-/// Each node is (noul_key, if_yes, if_no); leaves are rungs.
+/// Each node is (noul_key, if_yes, if_no); leaves are rungs. The two TOP leaves (a failed
+/// concurrency fix, open-ended multi-part design) are where Fable takes over when it is on.
 pub fn forest() -> Vec<(&'static str, Node)> {
     vec![
         (
@@ -131,7 +157,7 @@ pub fn forest() -> Vec<(&'static str, Node)> {
             "history",
             split(
                 "prior_failed",
-                split("concurrency", Leaf(O_XHIGH), Leaf(O_HIGH)),
+                split("concurrency", Leaf(TOP), Leaf(O_HIGH)),
                 split("perf", Leaf(S_HIGH), Leaf(S_MED)),
             ),
         ),
@@ -147,7 +173,7 @@ pub fn forest() -> Vec<(&'static str, Node)> {
             "design",
             split(
                 "open_ended",
-                split("multi_component", Leaf(O_XHIGH), Leaf(O_HIGH)),
+                split("multi_component", Leaf(TOP), Leaf(O_HIGH)),
                 split("concurrency", Leaf(O_MED), Leaf(S_MED)),
             ),
         ),
@@ -216,18 +242,23 @@ impl Tuning {
 
 /// The ladder, questions, thresholds and forest as JSON, for the dashboard.
 pub fn meta() -> Value {
-    fn node(n: &Node) -> Value {
+    let fable = crate::util::fable_enabled();
+    fn node(n: &Node, fable: bool) -> Value {
         match n {
-            Node::Leaf(rank) => json!({"leaf": LADDER[*rank].name}),
-            Node::Split(key, yes, no) => json!({"key": key, "yes": node(yes), "no": node(no)}),
+            Node::Leaf(rank) => json!({"leaf": LADDER[leaf(*rank, fable)].name}),
+            Node::Split(key, yes, no) => {
+                json!({"key": key, "yes": node(yes, fable), "no": node(no, fable)})
+            }
         }
     }
     let forest: Map<String, Value> = forest()
         .iter()
-        .map(|(name, n)| ((*name).to_string(), node(n)))
+        .map(|(name, n)| ((*name).to_string(), node(n, fable)))
         .collect();
     json!({
-        "ladder": LADDER.iter().map(|r| json!({"name": r.name, "model": r.model, "effort": r.effort})).collect::<Vec<_>>(),
+        "ladder": (0..LADDER.len()).map(|i| { let (m, e) = resolve(i); json!({"name": LADDER[i].name, "family": LADDER[i].family, "model": m.id, "effort": e, "label": label(i)}) }).collect::<Vec<_>>(),
+        "fable": fable,
+        "models": crate::models::status(),
         "questions": QUESTIONS.iter().map(|(k, q)| json!({"key": k, "instructions": q})).collect::<Vec<_>>(),
         "forest": forest,
         "thresholds": {"noul_yes": NOUL_YES, "borderline": BORDERLINE, "clear_yes": CLEAR_YES, "clear_no": CLEAR_NO,
@@ -245,7 +276,7 @@ pub struct Step {
 /// Follow one tree to a leaf. An unsure Noul follows both branches and keeps the higher
 /// rung ("when unsure, assume the harder case"). Ties keep the yes branch, as in Python.
 pub fn walk(node: &Node, answers: &Answers, path: Vec<Step>) -> (usize, Vec<Step>) {
-    walk_with(node, answers, path, BORDERLINE)
+    walk_with(node, answers, path, BORDERLINE, false)
 }
 
 fn walk_with(
@@ -253,9 +284,10 @@ fn walk_with(
     answers: &Answers,
     path: Vec<Step>,
     borderline: f64,
+    fable: bool,
 ) -> (usize, Vec<Step>) {
     match node {
-        Node::Leaf(rank) => (*rank, path),
+        Node::Leaf(rank) => (leaf(*rank, fable), path),
         Node::Split(key, if_yes, if_no) => {
             let p = noul(answers, key);
             let step = |branch| {
@@ -268,14 +300,14 @@ fn walk_with(
                 next
             };
             if (p - NOUL_YES).abs() < borderline {
-                let yes = walk_with(if_yes, answers, step("unsure->yes"), borderline);
-                let no = walk_with(if_no, answers, step("unsure->no"), borderline);
+                let yes = walk_with(if_yes, answers, step("unsure->yes"), borderline, fable);
+                let no = walk_with(if_no, answers, step("unsure->no"), borderline, fable);
                 return if no.0 > yes.0 { no } else { yes };
             }
             if p > NOUL_YES {
-                walk_with(if_yes, answers, step("yes"), borderline)
+                walk_with(if_yes, answers, step("yes"), borderline, fable)
             } else {
-                walk_with(if_no, answers, step("no"), borderline)
+                walk_with(if_no, answers, step("no"), borderline, fable)
             }
         }
     }
@@ -294,10 +326,40 @@ pub fn route_with(
     context_tokens: u64,
     tuning: &Tuning,
 ) -> Value {
+    route_tiered(answers, previous_rung, context_tokens, tuning, false)
+}
+
+/// `route_with`, optionally with the Fable tier. With `fable` false this is exactly the
+/// ladder without Fable. With it on:
+///   - the TOP tree leaves vote Fable high instead of Opus xhigh;
+///   - a tree that reaches its TOP leaf on clear answers only (no "unsure" branch) floors
+///     the result at Fable high: the hardest work goes to Fable even though one tree's
+///     vote can't move the median;
+///   - a failed answer from any Opus rung goes straight to Fable high;
+///   - the strongest rung is Fable max instead of Opus max.
+///
+/// Tree spread is measured as if Fable were off, so turning it on doesn't make the
+/// "trees disagree, +1" rule fire more often.
+pub fn route_tiered(
+    answers: &Answers,
+    previous_rung: Option<usize>,
+    context_tokens: u64,
+    tuning: &Tuning,
+    fable: bool,
+) -> Value {
+    let last = top(fable);
+    // A rung from before Fable was turned off still counts as the strongest one left.
+    let previous_rung = previous_rung.map(|p| p.min(last));
     let mut trees = Map::new();
     let mut ranks = Vec::new();
+    let mut base = Vec::new();
+    let mut hardest = Vec::new();
     for (name, tree) in forest() {
-        let (rung, path) = walk_with(&tree, answers, Vec::new(), tuning.borderline);
+        let (rung, path) = walk_with(&tree, answers, Vec::new(), tuning.borderline, fable);
+        base.push(if rung >= F_HIGH { O_XHIGH } else { rung });
+        if rung == F_HIGH && path.iter().all(|s| !s.branch.starts_with("unsure")) {
+            hardest.push(name);
+        }
         ranks.push(rung);
         let path: Vec<Value> = path
             .iter()
@@ -309,13 +371,14 @@ pub fn route_with(
         );
     }
     ranks.sort_unstable();
+    base.sort_unstable();
     let median = ranks[ranks.len() / 2];
-    let spread = ranks[ranks.len() - 1] - ranks[0];
+    let spread = base[base.len() - 1] - base[0];
     let mut rank = median;
     let mut why = vec![format!("median of votes: {}", LADDER[median].name)];
 
     if spread >= tuning.disagree_spread {
-        rank = (rank + 1).min(LADDER.len() - 1);
+        rank = (rank + 1).min(last);
         why.push(format!(
             "trees disagree (spread {spread} rungs): +1 -> {}",
             LADDER[rank].name
@@ -323,10 +386,20 @@ pub fn route_with(
     }
 
     if tuning.offset != 0 {
-        rank = (rank as i32 + tuning.offset).clamp(0, LADDER.len() as i32 - 1) as usize;
+        rank = (rank as i32 + tuning.offset).clamp(0, last as i32) as usize;
         why.push(format!(
             "auto-tuning: {:+} -> {}",
             tuning.offset, LADDER[rank].name
+        ));
+    }
+
+    // Before the cap: an unclear request still gets its clarifying questions first.
+    if !hardest.is_empty() && rank < F_HIGH {
+        rank = F_HIGH;
+        why.push(format!(
+            "hardest case ({} tree): floor -> {}",
+            hardest.join(", "),
+            LADDER[F_HIGH].name
         ));
     }
 
@@ -355,7 +428,11 @@ pub fn route_with(
     }
     if let Some(previous) = previous_rung {
         if noul(answers, "prior_failed") > CLEAR_YES {
-            let floor = (previous + 1).min(LADDER.len() - 1);
+            let floor = if fable && LADDER[previous].family == "opus" {
+                F_HIGH
+            } else {
+                (previous + 1).min(last)
+            };
             if rank < floor {
                 rank = floor;
                 why.push(format!(
@@ -373,14 +450,14 @@ pub fn route_with(
         }
     }
 
-    let rung = &LADDER[rank];
+    let (model, effort) = resolve(rank);
     json!({
         "trees": trees,
         "votes": ranks.iter().map(|r| LADDER[*r].name).collect::<Vec<_>>(),
         "median": LADDER[median].name,
         "spread": spread,
         "why": why,
-        "final": {"rung": rung.name, "model": rung.model, "effort": rung.effort},
+        "final": {"rung": LADDER[rank].name, "model": model.id, "effort": effort},
     })
 }
 
@@ -472,5 +549,106 @@ mod tests {
             3
         );
         assert_eq!(final_rung(&inventory, None, 0), name(O_MED));
+    }
+
+    fn tiered(answers: &Answers, previous: Option<usize>, fable: bool) -> String {
+        route_tiered(answers, previous, 0, &Tuning::default(), fable)["final"]["rung"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn legacy_names_map_to_family_rungs() {
+        assert_eq!(rank_of("haiku-4.5"), Some(H));
+        assert_eq!(rank_of("sonnet-5/low"), Some(S_LOW));
+        assert_eq!(rank_of("opus-5.5/max"), Some(O_MAX));
+        assert_eq!(rank_of("opus/xhigh"), Some(O_XHIGH));
+        assert_eq!(rank_of("fable/max"), Some(F_MAX));
+        assert_eq!(rank_of("opus"), None);
+    }
+
+    #[test]
+    fn fable_tier() {
+        // Open-ended multi-part design: the design tree's TOP leaf votes Fable.
+        let design = fake(&[
+            ("clarified", 0.95),
+            ("open_ended", 0.95),
+            ("multi_component", 0.95),
+        ]);
+        let on = route_tiered(&design, None, 0, &Tuning::default(), true);
+        let off = route_tiered(&design, None, 0, &Tuning::default(), false);
+        assert_eq!(on["trees"]["design"]["vote"], name(F_HIGH));
+        assert_eq!(off["trees"]["design"]["vote"], name(O_XHIGH));
+        // One clear TOP vote floors the result at Fable; without Fable nothing changes.
+        assert_eq!(on["final"]["rung"], name(F_HIGH));
+        assert_eq!(
+            off["final"]["rung"],
+            route(&design, None, 0)["final"]["rung"]
+        );
+        // Reached through an "unsure" branch: no Fable floor.
+        let unsure = fake(&[
+            ("clarified", 0.95),
+            ("open_ended", 0.55),
+            ("multi_component", 0.95),
+        ]);
+        assert_ne!(tiered(&unsure, None, true), name(F_HIGH));
+        // Unclear request: Haiku asks first, even when it looks like the hardest case.
+        let vague = fake(&[
+            ("clarified", 0.2),
+            ("open_ended", 0.95),
+            ("multi_component", 0.95),
+        ]);
+        assert_eq!(tiered(&vague, None, true), name(H));
+        // A failed concurrency fix is the other hardest case.
+        let race = fake(&[
+            ("clarified", 0.95),
+            ("prior_failed", 0.95),
+            ("concurrency", 0.95),
+        ]);
+        assert_eq!(tiered(&race, None, true), name(F_HIGH));
+
+        // A failed answer from Opus goes straight to Fable; without Fable, one step up.
+        let failed = fake(&[("clarified", 0.95), ("prior_failed", 0.95)]);
+        assert_eq!(tiered(&failed, Some(O_MED), true), name(F_HIGH));
+        assert_eq!(tiered(&failed, Some(O_MED), false), name(O_HIGH));
+        assert_eq!(tiered(&failed, Some(F_HIGH), true), name(F_MAX));
+        assert_eq!(tiered(&failed, Some(F_MAX), true), name(F_MAX));
+        // Fable turned off mid-conversation: its rung counts as Opus max.
+        assert_eq!(tiered(&failed, Some(F_HIGH), false), name(O_MAX));
+        // A failed Sonnet answer still climbs one step at a time.
+        assert_eq!(tiered(&failed, Some(S_MED), true), name(S_HIGH));
+
+        // Fable never shows up for work that doesn't reach the TOP leaves.
+        assert_eq!(
+            tiered(&fake(&[("clarified", 0.95), ("trivial", 0.95)]), None, true),
+            name(H)
+        );
+        assert_eq!(
+            tiered(&fake(&[("clarified", 0.95), ("security", 0.9)]), None, true),
+            name(O_MED)
+        );
+    }
+
+    #[test]
+    fn fable_does_not_change_the_disagreement_spread() {
+        let levels = [0.05, 0.5, 0.95];
+        for &a in &levels {
+            for &b in &levels {
+                for &c in &levels {
+                    let answers = fake(&[
+                        ("clarified", 0.95),
+                        ("open_ended", a),
+                        ("multi_component", b),
+                        ("prior_failed", c),
+                        ("concurrency", a),
+                        ("perf", b),
+                    ]);
+                    let on = route_tiered(&answers, None, 0, &Tuning::default(), true);
+                    let off = route_tiered(&answers, None, 0, &Tuning::default(), false);
+                    assert_eq!(on["spread"], off["spread"], "{answers:?}");
+                }
+            }
+        }
     }
 }

@@ -9,7 +9,7 @@
 //! recorded in tuning_history.jsonl; `jev-router tune --reset` or the dashboard undoes it.
 
 use crate::jev::read_log;
-use crate::router::{rank_of, route_with, Tuning, QUESTIONS};
+use crate::router::{rank_of, route_tiered, Tuning, QUESTIONS};
 use crate::util::{data_dir, utc_iso};
 use serde_json::{json, Map, Value};
 use std::fs::{self, OpenOptions};
@@ -71,6 +71,8 @@ pub struct Case {
     pub context: u64,
     pub rated: usize,
     pub label: String,
+    /// The Fable tier was on for this decision; replays keep the same ladder.
+    pub fable: bool,
 }
 
 /// The outcome of a search: the settings to use and how many ratings they satisfy.
@@ -141,6 +143,7 @@ fn cases() -> Vec<Case> {
                 context: r["facts"]["context_tokens"].as_u64().unwrap_or(0),
                 rated,
                 label,
+                fable: r["facts"]["fable"] == true,
             })
         })
         .collect()
@@ -150,7 +153,7 @@ fn cases() -> Vec<Case> {
 pub fn score(cases: &[Case], t: &Tuning) -> (usize, usize) {
     let (mut satisfied, mut broken) = (0, 0);
     for c in cases {
-        let new = route_with(&c.answers, c.previous, c.context, t)["final"]["rung"]
+        let new = route_tiered(&c.answers, c.previous, c.context, t, c.fable)["final"]["rung"]
             .as_str()
             .and_then(rank_of)
             .unwrap_or(c.rated);
@@ -295,6 +298,7 @@ mod tests {
             context: 0,
             rated,
             label: label.into(),
+            fable: false,
         }
     }
 

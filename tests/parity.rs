@@ -1,5 +1,7 @@
 //! The Rust port must reproduce the Python reference exactly. Fixtures come from
 //! tests/gen_parity.py, which runs router/ (Python) over randomized and edge-case inputs.
+//! Rung names were later renamed to family names ("opus-5.5/high" -> "opus/high"); the
+//! Fable tier is off here, which is the ladder the reference implements.
 
 use jev_router::autotune::{choose, Case};
 use jev_router::jev::clip;
@@ -9,6 +11,8 @@ use serde_json::{json, Value};
 
 #[test]
 fn matches_python_reference() {
+    // Fixtures were made with the built-in models, not whatever models.json has cached.
+    std::env::set_var("JEV_ROUTER_MODELS", "builtin");
     let fixtures = include_str!("parity.jsonl");
     let mut counts = [0usize; 5];
     for (i, line) in fixtures.lines().enumerate() {
@@ -77,6 +81,7 @@ fn matches_python_reference() {
                         context: c["context"].as_u64().unwrap(),
                         rated: c["rated"].as_u64().unwrap() as usize,
                         label: c["label"].as_str().unwrap().to_string(),
+                        fable: false,
                     })
                     .collect();
                 let got = choose(&cases, &Tuning::default());

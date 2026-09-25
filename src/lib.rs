@@ -2,6 +2,7 @@
 pub mod autotune;
 pub mod dashboard;
 pub mod jev;
+pub mod models;
 pub mod proxy;
 pub mod router;
 pub mod util;

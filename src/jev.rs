@@ -1,7 +1,7 @@
 //! Jev call, secret redaction, decision tracking and terminal views.
 //! Port of the non-proxy half of router/cli.py (the reference).
 
-use crate::router::{rank_of, route_with, Answers, CLEAR_YES, QUESTIONS};
+use crate::router::{rank_of, route_tiered, Answers, CLEAR_YES, QUESTIONS};
 use crate::util::{data_dir, random_id, utc_iso};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -187,6 +187,7 @@ pub fn decide(
     let mut all_facts = Map::new();
     all_facts.insert("previous_rung".into(), Value::Null);
     all_facts.insert("context_tokens".into(), json!(0));
+    all_facts.insert("fable".into(), json!(crate::util::fable_enabled()));
     all_facts.extend(facts);
     let state = build_state(prompt, history);
     let questions: Map<String, Value> = QUESTIONS
@@ -219,7 +220,8 @@ pub fn decide(
     let context = record["facts"]["context_tokens"].as_u64().unwrap_or(0);
     // Auto-tuned soft knobs (defaults until enough feedback); logged with the decision.
     let tuning = crate::autotune::current();
-    let decision = route_with(&answers, previous, context, &tuning);
+    let fable = record["facts"]["fable"] == true;
+    let decision = route_tiered(&answers, previous, context, &tuning, fable);
     record["tuning"] = tuning.to_json();
     record
         .as_object_mut()

@@ -7,7 +7,7 @@
 //! routed; its tool loop reuses that rung. HTTP/1.1 is served by hand so every SSE chunk is
 //! flushed as it arrives; upstream is ureq (rustls, connection pool).
 
-use crate::router::{rank_of, H, LADDER, S_MED};
+use crate::router::{label, rank_of, resolve, H, LADDER, S_MED};
 use crate::util::{local_hms, utc_iso};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -42,6 +42,8 @@ const HOP_HEADERS: [&str; 9] = [
 ];
 /// Models that accept mid-conversation `role: "system"` messages and tool_addition/removal
 /// blocks. Claude Code sends both to a model id it doesn't know; the others return 400.
+/// Any other model (including one newer than this list) gets them folded, which every
+/// model accepts.
 const SYSTEM_MESSAGE_MODELS: [&str; 1] = ["claude-opus-5-5"];
 
 fn reminder() -> &'static Regex {
@@ -222,15 +224,16 @@ pub fn fold_system_messages(body: &mut Value) {
 }
 
 /// Point the request at a rung. Claude Code composed it for "jev-router" (declared with
-/// thinking + effort), so fields the target model rejects must go.
+/// thinking + effort), so fields the target model rejects must go. What the model accepts
+/// comes from its Models API capabilities (models.rs), not from its name.
 pub fn apply_rung(body: &mut Value, rank: usize) {
-    let rung = &LADDER[rank];
-    body["model"] = json!(rung.model);
-    if !SYSTEM_MESSAGE_MODELS.contains(&rung.model) {
+    let (model, effort) = resolve(rank);
+    body["model"] = json!(model.id);
+    if !SYSTEM_MESSAGE_MODELS.contains(&model.id.as_str()) {
         fold_system_messages(body);
     }
     let obj = body.as_object_mut().expect("request body is an object");
-    if let Some(effort) = rung.effort {
+    if let Some(effort) = effort {
         match obj.get_mut("output_config") {
             Some(Value::Object(config)) => {
                 config.insert("effort".into(), json!(effort));
@@ -239,20 +242,24 @@ pub fn apply_rung(body: &mut Value, rank: usize) {
                 obj.insert("output_config".into(), json!({"effort": effort}));
             }
         }
+    } else {
+        // The Haiku rung, or a model without effort: never send one.
+        let empty_config = match obj.get_mut("output_config") {
+            Some(Value::Object(config)) => {
+                config.shift_remove("effort");
+                config.is_empty()
+            }
+            _ => false,
+        };
+        if empty_config {
+            obj.shift_remove("output_config");
+        }
+    }
+    if model.adaptive {
         return;
     }
-    // Haiku 4.5: adaptive thinking and effort are both 400s.
+    // No adaptive thinking (Haiku 4.5): thinking and thinking edits are 400s.
     obj.shift_remove("thinking");
-    let empty_config = match obj.get_mut("output_config") {
-        Some(Value::Object(config)) => {
-            config.shift_remove("effort");
-            config.is_empty()
-        }
-        _ => false,
-    };
-    if empty_config {
-        obj.shift_remove("output_config");
-    }
     let mut drop_edits = false;
     if let Some(edits) = obj
         .get_mut("context_management")
@@ -462,7 +469,7 @@ impl Router {
         if prompt.is_some() {
             self.status(
                 session.as_deref(),
-                json!({"rung": LADDER[rung].name, "decision": state.decision}),
+                json!({"rung": LADDER[rung].name, "label": label(rung), "decision": state.decision}),
             );
         }
         let kind = match (prompt.is_some(), tools) {
@@ -470,7 +477,7 @@ impl Router {
             (false, true) => "pinned",
             (false, false) => "aux",
         };
-        let tag = json!({"kind": kind, "model": LADDER[rung].model, "rung": LADDER[rung].name,
+        let tag = json!({"kind": kind, "model": resolve(rung).0.id, "rung": LADDER[rung].name,
                          "decision": state.decision, "conversation": key, "session_id": session});
         self.store(&key, state);
         let note = format!(
@@ -617,6 +624,7 @@ fn forward(
     let mut note = None;
     let mut tag = None;
     if path.starts_with("/v1/messages") && !body.is_empty() {
+        crate::models::refresh_if_stale(agent, upstream, headers);
         note = Some(match serde_json::from_slice::<Value>(&body) {
             Ok(mut data) if data.is_object() => {
                 // A bug in the rewrite must never take the session down: forward as-is.

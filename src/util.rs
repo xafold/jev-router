@@ -13,7 +13,40 @@ pub fn data_dir() -> PathBuf {
     home().join(".local/share/claude-router")
 }
 
+/// User choices that outlive a session (settings.json in the data dir), e.g. the Fable tier.
+pub fn settings() -> serde_json::Value {
+    std::fs::read_to_string(data_dir().join("settings.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+pub fn set_setting(key: &str, value: serde_json::Value) -> std::io::Result<()> {
+    let mut all = settings();
+    if !all.is_object() {
+        all = serde_json::json!({});
+    }
+    all[key] = value;
+    std::fs::create_dir_all(data_dir())?;
+    std::fs::write(
+        data_dir().join("settings.json"),
+        serde_json::to_string_pretty(&all).unwrap_or_default() + "\n",
+    )
+}
+
+/// Off unless the user ran `jev-router claude --fable on`. Unit tests never see it.
+pub fn fable_enabled() -> bool {
+    !cfg!(test) && settings()["fable"] == true
+}
+
 /// 12 hex chars, random per call (RandomState is seeded from the OS).
+pub fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 pub fn random_id() -> String {
     let mut h = RandomState::new().build_hasher();
     h.write_u128(

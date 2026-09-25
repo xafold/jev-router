@@ -18,6 +18,8 @@ const USAGE: &str =
     "jev-router: route each Claude Code turn to a model + effort, track every decision.
 
   jev-router claude [claude args]   start Claude Code behind the routing proxy (auto switch)
+  jev-router claude --fable on|off  also route the hardest work to Fable (saved; off by default)
+  jev-router models                 the model each family runs on (newest, auto-updated daily)
   jev-router route \"prompt\"         dry run: route one prompt and print the decision tree
   jev-router log [-n 20]            recent decisions, one line each
   jev-router show [ID]              full decision: Jev input, answers, trees
@@ -99,7 +101,100 @@ fn statusline_args() -> (Vec<String>, Option<String>) {
     (vec!["--settings".into(), settings.to_string()], inner)
 }
 
+/// Pull `--fable on|off` out of the Claude Code arguments and save the choice.
+fn take_fable_flag(args: &[String]) -> Vec<String> {
+    let mut rest = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--fable" {
+            let on = match args.get(i + 1).map(String::as_str) {
+                Some("on") => true,
+                Some("off") => false,
+                _ => {
+                    eprintln!("jev-router: use --fable on or --fable off");
+                    exit(2);
+                }
+            };
+            if let Err(error) = jev_router::util::set_setting("fable", json!(on)) {
+                eprintln!("jev-router: could not save the Fable setting: {error}");
+                exit(1);
+            }
+            println!(
+                "jev-router: Fable tier {} (saved for later sessions)",
+                if on {
+                    "on: the hardest work can go to Fable"
+                } else {
+                    "off"
+                }
+            );
+            i += 2;
+        } else {
+            rest.push(args[i].clone());
+            i += 1;
+        }
+    }
+    rest
+}
+
+/// Compact at the smallest context window on the ladder, so a switch down to that model
+/// can never overflow it (Haiku 4.5's 200K today).
+fn max_context_tokens() -> u64 {
+    let families: &[&str] = if jev_router::util::fable_enabled() {
+        &["haiku", "sonnet", "opus", "fable"]
+    } else {
+        &["haiku", "sonnet", "opus"]
+    };
+    families
+        .iter()
+        .map(|f| jev_router::models::model(f).context)
+        .min()
+        .unwrap_or(200_000)
+}
+
+fn cmd_models() {
+    let status = jev_router::models::status();
+    let fable = jev_router::util::fable_enabled();
+    for (family, m) in status["families"].as_object().into_iter().flatten() {
+        let efforts: Vec<&str> = m["efforts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        let note = if family == "fable" && !fable {
+            "  (not used: --fable off)"
+        } else {
+            ""
+        };
+        println!(
+            "{family:<7} {:<26} effort: {:<28} context {}{note}",
+            m["id"].as_str().unwrap_or(""),
+            if efforts.is_empty() {
+                "none".to_string()
+            } else {
+                efforts.join(",")
+            },
+            m["context"]
+        );
+    }
+    let source = if status["pinned"] == true {
+        "built-in (JEV_ROUTER_MODELS=builtin)".to_string()
+    } else if status["fetched_at"].as_u64().unwrap_or(0) == 0 {
+        "built-in; the first jev-router claude request looks up newer ones".to_string()
+    } else {
+        format!(
+            "Models API, checked daily ({} s ago)",
+            jev_router::util::unix_now().saturating_sub(status["fetched_at"].as_u64().unwrap_or(0))
+        )
+    };
+    println!("\nsource: {source}");
+    if let Some(error) = status["error"].as_str() {
+        println!("last lookup failed: {error}");
+    }
+}
+
 fn cmd_claude(claude_args: &[String]) -> ! {
+    let claude_args = &take_fable_flag(claude_args)[..];
     if env::var("TYPESAFE_API_KEY").map_or(true, |k| k.is_empty()) {
         println!("jev-router: no TYPESAFE_API_KEY; starting claude without routing");
         let error = Command::new("claude").args(claude_args).exec();
@@ -141,8 +236,10 @@ fn cmd_claude(claude_args: &[String]) -> ! {
             "ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES",
             "thinking,adaptive_thinking,interleaved_thinking,effort,max_effort",
         )
-        // Compact at Haiku's 200K window so a switch down to Haiku can never overflow it.
-        .env("CLAUDE_CODE_MAX_CONTEXT_TOKENS", "200000")
+        .env(
+            "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+            max_context_tokens().to_string(),
+        )
         .args(settings)
         .args(claude_args);
     if env::var_os("ANTHROPIC_MODEL").is_none() {
@@ -212,7 +309,10 @@ fn cmd_statusline() {
     // status by conversation if that turns out to confuse.
     let label = format!(
         "jev-router: {}",
-        status["rung"].as_str().unwrap_or("waiting for first turn")
+        status["label"]
+            .as_str()
+            .or(status["rung"].as_str())
+            .unwrap_or("waiting for first turn")
     );
     let Some(inner) = env::var("JEV_ROUTER_INNER_STATUSLINE")
         .ok()
@@ -290,6 +390,7 @@ fn main() {
         Some("log") => cmd_log(&args[1..]),
         Some("show") => cmd_show(args.get(1)),
         Some("statusline") => cmd_statusline(),
+        Some("models") => cmd_models(),
         Some("tune") => {
             let record = match args.get(1).map(String::as_str) {
                 Some("--reset") => jev_router::autotune::reset(),
