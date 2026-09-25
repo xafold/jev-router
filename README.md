@@ -40,11 +40,22 @@ ln -sfn "$PWD/target/release/jev-router" ~/.local/bin/jev-router
 jev-router claude               # Claude Code with automatic switching
 jev-router route "your prompt"  # dry run: which model would it pick, and why
 jev-router log                  # recent decisions
-jev-router dashboard            # local dashboard at http://127.0.0.1:8765
 ```
 
-- To choose a model yourself, pick any model in `/model`. Pick **Jev Router** to go back to automatic.
-- The dashboard shows which model handled each message, why, and roughly how much it saved compared with using Opus for everything. You can rate each choice there. After about 20 ratings the router quietly adjusts itself.
+To choose a model yourself, pick any model in `/model`. Pick **Jev Router** to go back to automatic.
+
+## Dashboard
+
+```bash
+jev-router dashboard              # open http://127.0.0.1:8765
+jev-router dashboard --port 9000  # use a different port
+```
+
+The dashboard is a local page that shows:
+- which model handled each message, and why;
+- roughly how much the router saved compared with using Opus for everything.
+
+You can rate each choice as right, too weak or too strong. After about 20 ratings, the router quietly adjusts itself.
 
 ## Tests
 
