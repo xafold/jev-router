@@ -27,6 +27,14 @@ flowchart LR
 
 You'll need Claude Code and a TypeSafe API key.
 
+### Get a TypeSafe API key
+
+1. Sign up at [console.typesafe.ai](https://console.typesafe.ai). Access is waitlisted, so a new account can take a while to be approved.
+2. Once you're in, create a key on the [API keys page](https://console.typesafe.ai/keys).
+3. Put it in `~/.config/jev-router/.env` as `TYPESAFE_API_KEY=...` (see below), or export `TYPESAFE_API_KEY`, which always wins.
+
+Without a key, `jev-router claude` still starts Claude Code, just without routing.
+
 **Prebuilt binary** (Linux x86_64 with glibc 2.39+, such as Ubuntu 24.04 or later). Download it from [Releases](https://github.com/xafold/jev-router/releases):
 
 ```bash
@@ -52,6 +60,10 @@ jev-router route "your prompt"  # dry run: which model would it pick, and why
 jev-router log                  # recent decisions
 ```
 
+![Claude Code started with jev-router claude: the status line shows the model the router picked](docs/img/claude-code.png)
+
+The status line shows the model the router picked for the current turn.
+
 To choose a model yourself, pick any model in `/model`. Pick **Jev Router** to go back to automatic.
 
 ## Dashboard
@@ -66,6 +78,16 @@ The dashboard is a local page that shows:
 - roughly how much the router saved compared with using Opus for everything.
 
 You can rate each choice as right, too weak or too strong. After about 20 ratings, the router quietly adjusts itself.
+
+![Dashboard summary: money saved, cost over time, and messages per model](docs/img/dashboard-summary.png)
+
+Every message, with the model and effort it got and what it cost:
+
+![Dashboard messages list](docs/img/dashboard-messages.png)
+
+Each message has a page showing Jev's answers, how the decision trees voted, and any safety rule that changed the result:
+
+![Dashboard message page: Jev answers and the tree vote](docs/img/dashboard-message.png)
 
 ## Versioning
 
