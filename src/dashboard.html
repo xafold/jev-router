@@ -117,32 +117,42 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .quote { border-left: 3px solid var(--accent); background: var(--band); padding: 10px 14px; border-radius: 0 8px 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn { border-left: 3px solid var(--border); padding: 4px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .turn span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.signals { display: flex; flex-wrap: wrap; gap: 8px; }
-.signal { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 14px; }
-.signal.yes { border-color: var(--text-2); font-weight: 600; }
-.signal.unsure { border-style: dashed; }
 .noul { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 44px 58px; gap: 10px; align-items: center; margin: 6px 0; font-size: 13px; }
 .track { position: relative; height: 14px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .track .unsure { position: absolute; top: 0; bottom: 0; background: var(--band); border-left: 1px dashed var(--muted); border-right: 1px dashed var(--muted); }
 .track .fill { position: absolute; left: 0; top: 3px; bottom: 3px; background: var(--accent); border-radius: 0 4px 4px 0; }
 .reasons { margin: 0; padding-left: 20px; }
 .reasons li { margin: 4px 0; }
-.ladder { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; margin: 12px 0 4px; }
-.option { border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px 8px; text-align: center; font-size: 11px; display: flex; flex-direction: column; gap: 2px; min-height: 84px; }
-.option.final { border: 2px solid var(--text); }
-.option .bar { height: 4px; border-radius: 2px; margin-bottom: 2px; }
-.option .votes { margin-top: auto; font-size: 12px; font-weight: 600; }
-.tree { font-size: 13px; }
-.tree ul { list-style: none; margin: 0; padding-left: 16px; border-left: 1px solid var(--border); }
-.tree > ul { border-left: 0; padding-left: 0; }
-.tree li { margin: 3px 0; }
-.tree .off { opacity: .38; }
-.tree .edge { color: var(--muted); font-size: 11px; margin-right: 4px; }
-.tree .on > .row .edge { color: var(--text); font-weight: 600; }
-.tree .row.unsure .node { border-style: dashed; }
-.tree .node { border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; display: inline-block; }
-.tree .on > .row .node { border-color: var(--text-2); }
-.tree .leaf.win { border: 2px solid var(--text); font-weight: 600; }
+/* Decision figure: trees -> vote groups -> middle vote -> rules -> final (inverted org chart). */
+.flow { overflow-x: auto; padding: 6px 2px 2px; }
+.flow-in { display: flex; flex-direction: column; align-items: center; min-width: max-content; margin: 0 auto; }
+.frow { display: flex; justify-content: center; }
+.fcell { position: relative; display: flex; flex-direction: column; align-items: center; padding: 0 7px 20px; --ln: var(--border); }
+.fcell.on { --ln: var(--accent); }
+.fcell::before, .fcell::after { content: ""; position: absolute; bottom: 0; width: 50%; height: 20px; border-bottom: 2px solid var(--ln); }
+.fcell::before { left: 0; }
+.fcell::after { right: 0; border-left: 2px solid var(--ln); }
+.fcell:first-child::before, .fcell:last-child::after { border-bottom: 0; }
+.fcell:first-child:last-child::before { border: 0; }
+.stem { width: 2px; height: 16px; background: var(--ln, var(--border)); }
+.stem.on { background: var(--accent); }
+.tcard { width: 168px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); font-size: 12px; transition: opacity .15s; }
+.tcard.off { opacity: .42; }
+.tcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.tcard b { display: block; font-size: 13px; margin-bottom: 4px; text-transform: capitalize; }
+.tq { display: flex; justify-content: space-between; gap: 6px; color: var(--text-2); line-height: 1.7; }
+.tq .a { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tq .a.yes { color: var(--text); font-weight: 650; }
+.tq .a.unsure { color: var(--text); font-weight: 650; text-decoration: underline dashed; text-underline-offset: 3px; }
+.pill { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; background: var(--surface); white-space: nowrap; }
+.pill.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; font-weight: 600; }
+.pill .n { color: var(--muted); font-weight: 400; }
+.mid { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 10px; font-size: 12px; background: var(--surface); }
+.mid .dot { width: 14px; height: 14px; border-radius: 4px; }
+.mid .dot.m { outline: 2px solid var(--text); outline-offset: 2px; margin: 0 3px; }
+.rail { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; border: 1px dashed var(--muted); border-radius: 8px; padding: 4px 10px; }
+.final-box { color: #fff; border-radius: 12px; padding: 8px 20px; font-weight: 650; font-size: 15px; text-align: center; }
+.final-box span { display: block; font-weight: 400; font-size: 12px; opacity: .9; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
 .kv dt { color: var(--text-2); }
 .kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
@@ -160,7 +170,7 @@ svg .hit { fill: transparent; }
   header, .filters { padding-left: 16px; padding-right: 16px; } main { padding: 12px 16px 40px; }
   .hero { grid-template-columns: 1fr; gap: 18px; } .hero .big { font-size: 40px; }
   .cmp { grid-template-columns: 110px 1fr; } .list li { grid-template-columns: 1fr auto; } .list .when { grid-column: 1 / -1; }
-  .noul { grid-template-columns: 1fr 70px 40px 52px; } .ladder { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .noul { grid-template-columns: 1fr 70px 40px 52px; }
 }
 </style>
 </head>
@@ -451,15 +461,45 @@ function pageMessages() {
   return [card(`${fmt(ds.length)} messages`, "Newest first. For each one: the model it went to, why, and what it cost (once cost tracking has data).", messageList(ds))];
 }
 
-function treeView(node, answers, active, vote, edge, borderline) {
-  const th = { ...S.meta.thresholds, borderline: borderline ?? S.meta.thresholds.borderline };
-  if (node.leaf) return h("li", { class: active ? "on" : "off" }, h("span", { class: "row" }, edge ? h("span", { class: "edge", text: edge }) : null,
-    h("span", { class: `node leaf${active && node.leaf === vote ? " win" : ""}` }, h("i", { class: "sw", style: `background:${fam(node.leaf).color};margin-right:5px` }), friendly(node.leaf))));
-  const p = answers[node.key], unsure = Math.abs(p - th.noul_yes) < th.borderline;
-  return h("li", { class: active ? "on" : "off" },
-    h("span", { class: `row${active && unsure ? " unsure" : ""}` }, edge ? h("span", { class: "edge", text: edge }) : null,
-      h("span", { class: "node", title: QLABEL[node.key] || node.key }, `${QLABEL[node.key] || node.key}? `, h("b", { text: p.toFixed(2) }), active && unsure ? h("span", { class: "muted", text: " not sure, both paths" }) : null)),
-    h("ul", {}, treeView(node.yes, answers, active && (unsure || p > th.noul_yes), vote, "yes", th.borderline), treeView(node.no, answers, active && (unsure || p <= th.noul_yes), vote, "no", th.borderline)));
+const RAIL = [["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
+  ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["context tokens", "long chat, no downgrade"]];
+const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design" };
+const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : ""}`;
+
+// The notebook's forest figure: each tree's path, votes grouped by option, the middle vote,
+// then any rule that moved it, then the final choice. Trees that voted for the middle are lit.
+function decisionFlow(d) {
+  const order = (r) => S.meta.ladder.findIndex((l) => l.name === r);
+  const trees = Object.entries(d.trees), median = d.median || (d.why[0] || "").split(": ")[1];
+  const groups = [...new Set(trees.map(([, t]) => t.vote))].sort((a, b) => order(a) - order(b));
+  const step = ({ key, noul, branch }) => {
+    const unsure = branch.startsWith("unsure"), yes = branch.endsWith("yes");
+    return h("div", { class: "tq", title: `${QLABEL[key] || key}: ${noul.toFixed(2)}` }, h("span", { text: FLOWQ[key] || key }),
+      h("span", { class: `a${unsure ? " unsure" : yes ? " yes" : ""}`, text: `${noul.toFixed(2)} ${unsure ? "?" : yes ? "yes" : "no"}` }));
+  };
+  const group = (r) => {
+    const mine = trees.filter(([, t]) => t.vote === r), on = r === median;
+    return h("div", { class: `fcell${on ? " on" : ""}` },
+      h("div", { class: "frow" }, mine.map(([name, t]) => h("div", { class: `fcell${on ? " on" : ""}` },
+        h("div", { class: `tcard ${on ? "on" : "off"}` }, h("b", { text: name }), t.path.map(step))))),
+      h("div", { class: `stem${on ? " on" : ""}` }),
+      h("span", { class: `pill${on ? " on" : ""}` }, h("i", { class: "sw", style: `background:${fam(r).color}` }), shortRung(r), h("span", { class: "n", text: `${mine.length} vote${mine.length > 1 ? "s" : ""}` })));
+  };
+  const votes = trees.map(([, t]) => t.vote).sort((a, b) => order(a) - order(b)), mi = Math.floor(votes.length / 2);
+  const rails = (d.why || []).slice(1).map((w) => {
+    const label = (RAIL.find(([k]) => w.includes(k)) || [null, w])[1], to = [...w.matchAll(/-> ([a-z0-9.\-]+(?:\/[a-z]+)?)/g)].pop();
+    return [h("div", { class: "stem on" }), h("div", { class: "rail", title: reasonSentence(w) }, h("span", { text: label }), to ? h("b", { text: `→ ${shortRung(to[1])}` }) : null)];
+  });
+  const rung = finalOf(d);
+  return h("div", { class: "flow", role: "img", "aria-label": (d.why || []).map(reasonSentence).join(" ") },
+    h("div", { class: "flow-in" },
+      h("div", { class: "frow" }, groups.map(group)),
+      h("div", { class: "stem on" }),
+      h("div", { class: "mid", title: "Votes from cheapest to strongest; the middle one wins" }, votes.map((v, i) => h("i", { class: `dot${i === mi ? " m" : ""}`, title: friendly(v), style: `background:${fam(v).color}` })),
+        h("span", { style: "margin-left:6px", text: "middle vote" })),
+      rails,
+      h("div", { class: "stem on" }),
+      h("div", { class: "final-box", style: `background:${fam(rung).color}` }, fam(rung).label, h("span", { text: effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting" }))));
 }
 
 const RATINGS = [["right", "✓ Right"], ["too_low", "↑ Needed a stronger one"], ["too_high", "↓ A cheaper one would do"]];
@@ -546,36 +586,19 @@ function pageMessage(id) {
     h("div", {}, h("div", { class: "muted", style: "margin-bottom:6px", text: "Was this the right model?" }), rateButtons(id))));
 
   const answers = d.jev.answers, entries = Object.entries(answers);
-  const yes = entries.filter(([, p]) => p > th.clear_yes), unsure = entries.filter(([, p]) => p >= th.clear_no && p <= th.clear_yes), no = entries.filter(([, p]) => p < th.clear_no);
-  const noticed = card(null, null, h("div", { class: "step-h" }, h("i", { text: "2" }), h("h2", { text: "What Jev noticed" })),
-    h("p", { class: "lead", text: "Jev answered 9 yes/no questions about your message." }),
-    yes.length ? [h("h3", { text: "Yes" }), h("div", { class: "signals" }, yes.map(([k, p]) => h("span", { class: "signal yes", title: `score ${p.toFixed(2)}`, text: `✓ ${QLABEL[k] || k}` })))] : null,
-    unsure.length ? [h("h3", { text: "Not sure" }), h("div", { class: "signals" }, unsure.map(([k, p]) => h("span", { class: "signal unsure", title: `score ${p.toFixed(2)}`, text: `? ${QLABEL[k] || k}` })))] : null,
-    no.length ? h("p", { class: "hint", text: `No to: ${no.map(([k]) => QSHORT[k] || k).join(", ")}.` }) : null,
-    more("See all 9 scores", h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
+  const chosen = card(null, null, h("div", { class: "step-h" }, h("i", { text: "2" }), h("h2", { text: "How it decided" })),
+    decisionFlow(d),
+    more("All 9 Jev answers", h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
       entries.map(([k, p]) => h("div", { class: "noul" }, h("span", { text: QLABEL[k] || k }),
         h("div", { class: "track" }, h("span", { class: "unsure", style: `left:${th.clear_no * 100}%;width:${(th.clear_yes - th.clear_no) * 100}%` }), h("span", { class: "fill", style: `width:${Math.max(1, p * 100)}%` })),
         h("span", { class: "num", text: p.toFixed(2) }), h("span", { class: "muted", text: p > th.clear_yes ? "yes" : p < th.clear_no ? "no" : "not sure" })))));
-
-  const votes = countBy(Object.values(d.trees), (t) => t.vote);
-  const chosen = card(null, null, h("div", { class: "step-h" }, h("i", { text: "3" }), h("h2", { text: "How the model was chosen" })),
-    h("ol", { class: "reasons" }, (d.why || []).map((w) => h("li", { text: reasonSentence(w) }))),
-    h("div", { class: "ladder", role: "img", "aria-label": "Votes for each model and effort option" }, S.meta.ladder.map((r) => h("div", { class: `option${r.name === rung ? " final" : ""}`, title: friendly(r.name) },
-      h("div", { class: "bar", style: `background:${fam(r.name).color}` }), h("b", { text: fam(r.name).label }), h("span", { class: "muted", text: effortOf(r.name) ? `${effortOf(r.name)} effort` : "no effort" }),
-      h("span", { class: "votes", text: votes.get(r.name) ? `${votes.get(r.name)} vote${votes.get(r.name) > 1 ? "s" : ""}` : "" }),
-      r.name === rung ? h("span", { style: "font-size:11px;font-weight:700", text: "chosen" }) : null))),
-    h("p", { class: "hint", text: "The 8 model + effort options, cheapest on the left. Each of the five decision trees votes once." }),
-    more("See the five decision trees", h("p", { class: "hint", text: "The highlighted path is the one taken. A dashed box means Jev wasn't sure, so both paths count and the stronger result wins." }),
-      h("div", { class: "grid", style: "grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:10px" },
-        Object.entries(S.meta.forest).map(([name, root]) => h("div", { class: "tree" }, h("div", { style: "margin-bottom:4px" }, h("b", { text: `${name} tree` }), h("span", { class: "muted", text: ` → ${friendly(d.trees[name].vote)}` })),
-          h("ul", {}, treeView(root, answers, true, d.trees[name].vote, null, (d.tuning || {}).borderline)))))));
 
   const f = d.facts || {}, u = d.jev.usage || {};
   const tech = card(null, null, more("Technical details", h("dl", { class: "kv", style: "margin-top:10px" },
     [["decision id", d.id], ["model id", `${d.final.model} (effort ${d.final.effort || "none"})`], ["previous model", f.previous_rung ? friendly(f.previous_rung) : "none (first message)"], ["conversation size", `~${fmt(f.context_tokens || 0)} tokens`],
      ["Jev", `${d.jev.model}, ${fmt(d.jev.latency_ms)} ms, ${fmt(u.input_tokens || 0)} tokens, request ${d.jev.request_id || "–"}`], ["session", d.session_id || "–"], ["source", d.source], ["folder", d.cwd]]
       .map(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]))));
-  return [head, result, asked, noticed, chosen, tech];
+  return [head, result, asked, chosen, tech];
 }
 
 function histogram(values, band) {
