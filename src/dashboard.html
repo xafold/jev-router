@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev-router</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f5f4f1; --surface: #fcfcfb; --border: #e4e2dc; --grid: #ecebe7; --band: #efeeea;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #75746e;
+  --haiku: #2a78d6; --sonnet: #eb6834; --opus: #1baf7a; --accent: #2a78d6; --baseline: #b4b2a9;
+  --critical: #d03b3b; --good: #0a7d0a; --focus: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
+    --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
+  --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
+  --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: inherit; }
+header { display: flex; align-items: center; gap: 20px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+.brand b { font-size: 16px; display: block; }
+.brand span { color: var(--text-2); font-size: 12px; }
+nav { display: flex; gap: 4px; }
+nav a { color: var(--text-2); text-decoration: none; padding: 7px 12px; border-radius: 8px; }
+nav a[aria-current="page"] { color: var(--text); background: var(--band); font-weight: 600; }
+.spacer { flex: 1; }
+button, select, input { font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+button { cursor: pointer; }
+button:hover { background: var(--band); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.filters { display: flex; gap: 10px; padding: 14px 24px 4px; flex-wrap: wrap; align-items: end; }
+.filters label { color: var(--text-2); font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.filters .more { display: none; gap: 10px; flex-wrap: wrap; }
+.filters.open .more { display: flex; }
+main { padding: 12px 24px 48px; max-width: 1180px; }
+main.loading { opacity: .6; }
+.stack > * + * { margin-top: 16px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; min-width: 0; }
+.card h2 { font-size: 16px; margin: 0 0 4px; font-weight: 600; }
+.card h3 { font-size: 14px; margin: 14px 0 6px; font-weight: 600; }
+.lead { color: var(--text-2); margin: 0 0 14px; font-size: 14px; }
+.hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.todo { background: var(--band); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text-2); margin-top: 12px; }
+.todo b { color: var(--text); }
+.hero { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.3fr); gap: 28px; align-items: center; }
+.hero .big { font-size: 48px; font-weight: 650; line-height: 1.05; }
+.hero .big.good { color: var(--good); }
+.hero .say { font-size: 16px; margin: 8px 0 0; }
+.cmp { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; font-size: 14px; }
+.cmp .bar { height: 22px; border-radius: 0 4px 4px 0; min-width: 3px; }
+.cmp .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.split { display: flex; height: 16px; gap: 2px; border-radius: 4px; overflow: hidden; margin: 8px 0 6px; }
+.split span { display: block; min-width: 2px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.models { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.model .n { font-size: 30px; font-weight: 650; line-height: 1.1; margin-top: 6px; }
+.model .desc { color: var(--text-2); font-size: 13px; }
+.model .efforts { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.model .top { height: 4px; margin: -18px -20px 14px; border-radius: 12px 12px 0 0; }
+.steps4 { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); counter-reset: s; }
+.steps4 div { background: var(--band); border-radius: 10px; padding: 12px 14px; font-size: 14px; }
+.steps4 div::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--surface); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.steps4 b { display: block; }
+details { margin-top: 12px; }
+summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
+summary:hover { color: var(--text); }
+dl.gloss { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 14px; margin: 10px 0 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--text-2); }
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { display: grid; grid-template-columns: 96px 1fr auto; gap: 14px; align-items: baseline; padding: 10px 6px; border-bottom: 1px solid var(--grid); cursor: pointer; border-radius: 6px; }
+.list li:hover { background: var(--band); }
+.list .when { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.list .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .why { color: var(--text-2); font-size: 13px; }
+.list .right { text-align: right; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.chip .eff { font-weight: 400; color: var(--text-2); }
+.err { color: var(--critical); font-weight: 600; }
+.muted { color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+.saved { color: var(--good); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border); padding: 6px 8px; }
+td { border-bottom: 1px solid var(--grid); padding: 8px; vertical-align: top; }
+td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.back { display: inline-block; margin: 4px 0 8px; color: var(--text-2); text-decoration: none; }
+.title { font-size: 20px; font-weight: 650; margin: 0; overflow-wrap: anywhere; }
+.result { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.result .picked { font-size: 24px; }
+.fb { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fb button[aria-pressed="true"] { border-color: var(--text); background: var(--band); font-weight: 600; }
+.rate li { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--grid); }
+.rate .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.rate .msg:hover { text-decoration: underline; }
+.rate .why { color: var(--text-2); font-size: 13px; }
+.rate .fb button { font-size: 13px; padding: 4px 10px; }
+.rate li.done { opacity: .6; }
+@media (max-width: 700px) { .rate li { grid-template-columns: 1fr; } }
+.step-h { display: flex; align-items: center; gap: 10px; }
+.step-h i { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--text); color: var(--surface); font-style: normal; font-size: 12px; font-weight: 700; flex: none; }
+.quote { border-left: 3px solid var(--accent); background: var(--band); padding: 10px 14px; border-radius: 0 8px 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn { border-left: 3px solid var(--border); padding: 4px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.turn span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.signals { display: flex; flex-wrap: wrap; gap: 8px; }
+.signal { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 14px; }
+.signal.yes { border-color: var(--text-2); font-weight: 600; }
+.signal.unsure { border-style: dashed; }
+.noul { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 44px 58px; gap: 10px; align-items: center; margin: 6px 0; font-size: 13px; }
+.track { position: relative; height: 14px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.track .unsure { position: absolute; top: 0; bottom: 0; background: var(--band); border-left: 1px dashed var(--muted); border-right: 1px dashed var(--muted); }
+.track .fill { position: absolute; left: 0; top: 3px; bottom: 3px; background: var(--accent); border-radius: 0 4px 4px 0; }
+.reasons { margin: 0; padding-left: 20px; }
+.reasons li { margin: 4px 0; }
+.ladder { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; margin: 12px 0 4px; }
+.option { border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px 8px; text-align: center; font-size: 11px; display: flex; flex-direction: column; gap: 2px; min-height: 84px; }
+.option.final { border: 2px solid var(--text); }
+.option .bar { height: 4px; border-radius: 2px; margin-bottom: 2px; }
+.option .votes { margin-top: auto; font-size: 12px; font-weight: 600; }
+.tree { font-size: 13px; }
+.tree ul { list-style: none; margin: 0; padding-left: 16px; border-left: 1px solid var(--border); }
+.tree > ul { border-left: 0; padding-left: 0; }
+.tree li { margin: 3px 0; }
+.tree .off { opacity: .38; }
+.tree .edge { color: var(--muted); font-size: 11px; margin-right: 4px; }
+.tree .on > .row .edge { color: var(--text); font-weight: 600; }
+.tree .row.unsure .node { border-style: dashed; }
+.tree .node { border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; display: inline-block; }
+.tree .on > .row .node { border-color: var(--text-2); }
+.tree .leaf.win { border: 2px solid var(--text); font-weight: 600; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
+.kv dt { color: var(--text-2); }
+.kv dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.hbar { display: grid; grid-template-columns: minmax(160px, 300px) 1fr 44px; gap: 10px; align-items: center; margin: 7px 0; font-size: 14px; }
+.hbar .b { height: 12px; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 2px; }
+.empty { padding: 40px 20px; text-align: center; color: var(--text-2); }
+.tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.14); display: none; z-index: 10; max-width: 300px; }
+.tip strong { display: block; font-size: 14px; }
+.tip div { color: var(--text-2); }
+.hist-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin-top: 10px; }
+svg text { fill: var(--text-2); font-size: 11px; }
+svg .grid-line { stroke: var(--grid); stroke-width: 1; }
+svg .hit { fill: transparent; }
+@media (max-width: 700px) {
+  header, .filters { padding-left: 16px; padding-right: 16px; } main { padding: 12px 16px 40px; }
+  .hero { grid-template-columns: 1fr; gap: 18px; } .hero .big { font-size: 40px; }
+  .cmp { grid-template-columns: 110px 1fr; } .list li { grid-template-columns: 1fr auto; } .list .when { grid-column: 1 / -1; }
+  .noul { grid-template-columns: 1fr 70px 40px 52px; } .ladder { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>jev-router</b><span>picks the right Claude model for each message</span></div>
+  <nav aria-label="Pages">
+    <a href="#/summary" data-view="summary">Summary</a>
+    <a href="#/messages" data-view="messages">Messages</a>
+    <a href="#/improve" data-view="improve">Improve</a>
+  </nav>
+  <span class="spacer"></span>
+  <span class="muted" id="updated" style="font-size:13px"></span>
+  <button id="refresh" type="button">Refresh</button>
+  <button id="theme" type="button" aria-label="Color theme">Theme: system</button>
+</header>
+<div class="filters" id="filters">
+  <label>Show<select id="f-range">
+    <option value="all">All time</option><option value="1">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option>
+  </select></label>
+  <label>Compare cost against<select id="f-baseline"></select></label>
+  <label>Search messages<input id="f-search" type="search" placeholder="words in your message"></label>
+  <button type="button" id="more-toggle" aria-expanded="false">More filters</button>
+  <span class="more">
+    <label>Project<select id="f-project"><option value="">All</option></select></label>
+    <label>Model chosen<select id="f-rung"><option value="">All</option></select></label>
+    <label>Source<select id="f-source"><option value="">All</option></select></label>
+  </span>
+</div>
+<main id="view" aria-live="polite"></main>
+<div class="tip" id="tip" role="tooltip"></div>
+<script>
+"use strict";
+// Internally a "rung" is one of the 8 model + effort options (router.rs LADDER). The UI never
+// says "rung": users see "model" and "effort".
+const S = { decisions: [], usage: [], meta: null, feedback: {}, proxy: {}, tuning: null };
+const $ = (id) => document.getElementById(id);
+const SVGNS = "http://www.w3.org/2000/svg";
+
+// DOM builders. Record content (prompts, reasons, paths) is untrusted: text only, never HTML.
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "text") el.textContent = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "style") el.style.cssText = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid !== null && kid !== undefined && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+function s(tag, attrs, ...kids) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v !== null && v !== undefined) el.setAttribute(k, v);
+  for (const kid of kids.flat(Infinity)) if (kid) el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+
+// --- Plain-language vocabulary ----------------------------------------------------------
+const FAMILIES = [
+  { key: "haiku", label: "Haiku 4.5", color: "var(--haiku)", desc: "Fastest and cheapest. Quick questions, small edits, and asking clarifying questions." },
+  { key: "sonnet", label: "Sonnet 5", color: "var(--sonnet)", desc: "Everyday coding: features, fixes and tests with a clear shape." },
+  { key: "opus", label: "Opus 5.5", color: "var(--opus)", desc: "Hard or risky work: concurrency, security, design, or a fix that already failed." },
+];
+const EFFORT = { low: "thinks briefly", medium: "thinks a moderate amount", high: "thinks carefully", xhigh: "thinks very carefully", max: "thinks as long as it needs" };
+const QLABEL = {
+  clarified: "The request is clear enough to start",
+  trivial: "It's a small, simple change",
+  multi_component: "It touches several parts of the code",
+  perf: "It has performance or scale needs",
+  concurrency: "It involves concurrency (threads, async, locks)",
+  prior_failed: "It says the previous answer didn't work",
+  security: "It involves security or sensitive data",
+  tests: "It asks for tests",
+  open_ended: "It's open-ended system design",
+};
+const QSHORT = { clarified: "clear request", trivial: "small change", multi_component: "several parts", perf: "performance needs", concurrency: "concurrency", prior_failed: "previous answer failed", security: "security", tests: "tests", open_ended: "system design" };
+const familyOf = (rung) => (rung || "").split(/[-/]/)[0];
+const fam = (rung) => FAMILIES.find((f) => f.key === familyOf(rung)) || { label: rung || "?", color: "var(--muted)" };
+const effortOf = (rung) => (rung || "").split("/")[1] || null;
+const friendly = (rung) => rung ? `${fam(rung).label}${effortOf(rung) ? ` (${effortOf(rung)} effort)` : ""}` : "none";
+const chip = (rung) => rung
+  ? h("span", { class: "chip" }, h("i", { class: "sw", style: `background:${fam(rung).color}` }), fam(rung).label, effortOf(rung) ? h("span", { class: "eff", text: `· ${effortOf(rung)} effort` }) : null)
+  : h("span", { class: "err", text: "⚠ routing failed" });
+
+function reasonSentence(w) {
+  let m;
+  if ((m = w.match(/^median of votes: (.+)$/))) return `The five decision trees' middle vote was ${friendly(m[1])}.`;
+  if ((m = w.match(/^trees disagree \(spread (\d+) rungs\): \+1 -> (.+)$/))) return `The trees disagreed a lot, so it picked one step stronger to be safe: ${friendly(m[2])}.`;
+  if (w.startsWith("needs clarification")) return "Your message looked unclear, so the cheapest model asks clarifying questions first.";
+  if ((m = w.match(/^security-sensitive: floor -> (.+)$/))) return `Security work always gets at least ${friendly(m[1])}.`;
+  if ((m = w.match(/^concurrency: floor -> (.+)$/))) return `Concurrency work always gets at least ${friendly(m[1])}.`;
+  if ((m = w.match(/^last answer \((.+)\) failed: floor -> (.+)$/))) return `The previous answer (from ${friendly(m[1])}) didn't work, so it moved to a stronger option: ${friendly(m[2])}.`;
+  if ((m = w.match(/^~(\d+) context tokens: no downgrade \(cache rebuild\) -> (.+)$/))) return `The conversation is already long (~${fmt(m[1])} tokens). Switching to a cheaper model would throw away the prompt cache and cost more, so it stayed on ${friendly(m[2])}.`;
+  return w;
+}
+function shortReason(d) {
+  if (!d.final) return "couldn't reach Jev; kept the previous model";
+  const w = (d.why || []).slice(1).map((x) => x.split(":")[0]).pop() || "";
+  if (w.startsWith("needs clarification")) return "unclear, so it asks first";
+  if (w.startsWith("security")) return "security rule";
+  if (w.startsWith("concurrency")) return "concurrency rule";
+  if (w.startsWith("last answer")) return "previous answer failed";
+  if (w.includes("context tokens")) return "long chat, kept the model";
+  if (w.startsWith("trees disagree")) return "trees disagreed, one step stronger";
+  const yes = Object.entries(d.jev.answers || {}).filter(([k, p]) => k !== "clarified" && p > S.meta.thresholds.clear_yes).map(([k]) => QSHORT[k] || k);
+  return yes.length ? yes.join(", ") : "nothing special";
+}
+
+// --- Data helpers --------------------------------------------------------------------------
+const finalOf = (d) => (d.final && d.final.rung) || null;
+const latestOf = (d) => { const st = (d.jev && d.jev.state) || {}; return st.latest ?? ((st.messages || []).slice(-1)[0] || {}).text ?? ""; };
+const words = (t) => String(t || "").split(/\s+/).filter(Boolean).join(" ");
+const fmt = (n) => Number(n).toLocaleString();
+const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "–");
+const money = (x) => { if (!Number.isFinite(x)) return "–"; const a = Math.abs(x); return `${x < 0 ? "-" : ""}$${a >= 100 ? a.toFixed(0) : a >= 1 ? a.toFixed(2) : a >= 0.01 ? a.toFixed(3) : a.toFixed(4)}`; };
+const compact = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}K` : fmt(n);
+const project = (cwd) => (cwd || "").split("/").filter(Boolean).pop() || "(none)";
+function ago(ts) {
+  const d = new Date(ts), sec = (Date.now() - d) / 1000;
+  if (!isFinite(sec)) return ts;
+  if (sec < 90) return "just now";
+  if (sec < 3600) return `${Math.round(sec / 60)} min ago`;
+  if (sec < 86400) return `${Math.round(sec / 3600)} h ago`;
+  if (sec < 172800) return "yesterday";
+  return d.toLocaleDateString();
+}
+function countBy(xs, f) { const m = new Map(); for (const x of xs) { const k = f(x); m.set(k, (m.get(k) || 0) + 1); } return m; }
+
+function priceFor(model) {
+  const P = S.meta.pricing, key = Object.keys(P).sort((a, b) => b.length - a.length).find((k) => (model || "").startsWith(k));
+  return key ? P[key] : null;
+}
+function tokensOf(u) { return (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0); }
+function costOf(u, p) {
+  if (!p) return null;
+  const c = u.cache_creation || {}, w1 = c.ephemeral_1h_input_tokens || 0, w5 = c.ephemeral_5m_input_tokens ?? Math.max(0, (u.cache_creation_input_tokens || 0) - w1);
+  return ((u.input_tokens || 0) * p.input + (u.output_tokens || 0) * p.output + (u.cache_read_input_tokens || 0) * p.cache_read + w5 * p.cache_write_5m + w1 * p.cache_write_1h) / 1e6;
+}
+// Actual vs. "without the router": every routed request re-priced on the baseline model.
+// Manual /model turns cost the same either way.
+function costs(records, baseline) {
+  const bp = S.meta.pricing[baseline];
+  let actual = 0, without = 0, tokens = 0, priced = 0, n = 0;
+  const byFam = new Map();
+  for (const r of records) {
+    const u = r.usage || {}, a = costOf(u, priceFor(r.model || r.served_model));
+    tokens += tokensOf(u); n += 1;
+    const f = r.kind === "manual" ? "manual" : familyOf(r.rung);
+    byFam.set(f, (byFam.get(f) || 0) + tokensOf(u));
+    if (a === null) continue;
+    priced += 1; actual += a; without += r.kind === "manual" ? a : costOf(u, bp);
+  }
+  return { actual, without, tokens, priced, n, byFam };
+}
+
+// Filters: messages by everything; usage by date and project (usage rows carry the session).
+function since() {
+  const r = $("f-range").value;
+  if (r === "all") return 0;
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (Number(r) - 1)); return d.getTime();
+}
+function filteredDecisions() {
+  const t0 = since(), src = $("f-source").value, proj = $("f-project").value, rung = $("f-rung").value, q = $("f-search").value.trim().toLowerCase();
+  return S.decisions.filter((d) => (!t0 || new Date(d.ts) >= t0) && (!src || d.source === src) && (!proj || d.cwd === proj) && (!rung || finalOf(d) === rung) && (!q || latestOf(d).toLowerCase().includes(q)));
+}
+function filteredUsage() {
+  const t0 = since(), proj = $("f-project").value;
+  const sessionCwd = new Map(S.decisions.map((d) => [d.session_id, d.cwd]));
+  return S.usage.filter((u) => (!t0 || new Date(u.ts) >= t0) && (!proj || sessionCwd.get(u.session_id) === proj));
+}
+const usageByDecision = () => { const m = new Map(); for (const u of S.usage) if (u.decision) m.set(u.decision, [...(m.get(u.decision) || []), u]); return m; };
+
+// --- Tooltip ---------------------------------------------------------------------------------
+const tip = $("tip");
+function tipTarget(el, value, ...lines) {
+  const show = (x, y) => {
+    tip.replaceChildren(h("strong", { text: value }), ...lines.map((l) => h("div", { text: l })));
+    tip.style.display = "block";
+    const r = tip.getBoundingClientRect();
+    tip.style.left = `${Math.min(x + 14, innerWidth - r.width - 8)}px`; tip.style.top = `${Math.min(y + 14, innerHeight - r.height - 8)}px`;
+  };
+  el.setAttribute("tabindex", "0"); el.setAttribute("aria-label", [value, ...lines].join(", "));
+  el.addEventListener("pointermove", (e) => show(e.clientX, e.clientY));
+  el.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); show(r.right, r.top); });
+  el.addEventListener("blur", () => { tip.style.display = "none"; });
+  return el;
+}
+
+// --- Building blocks -------------------------------------------------------------------------
+const card = (title, lead, ...body) => h("section", { class: "card" }, title ? h("h2", { text: title }) : null, lead ? h("p", { class: "lead", text: lead }) : null, ...body);
+const more = (label, ...body) => h("details", {}, h("summary", { text: label }), ...body);
+const empty = (msg) => h("div", { class: "card empty", text: msg });
+const todo = (text) => h("div", { class: "todo" }, h("b", { text: "What to do: " }), text);
+const legend = (items) => h("div", { class: "legend" }, items.map((it) => h("span", {}, h("i", { class: "sw", style: `background:${it.color}` }), it.label)));
+const baselineName = () => (S.meta.pricing[$("f-baseline").value] || {}).name || "the baseline";
+
+function heroCard() {
+  const c = costs(filteredUsage(), $("f-baseline").value);
+  const decisions = filteredDecisions().filter(finalOf);
+  const jev = decisions.reduce((a, d) => a + ((d.jev.usage || {}).input_tokens || 0), 0) * S.meta.jev_per_mtok / 1e6;
+  if (!c.priced) {
+    return card("Money saved", null, h("p", { class: "say", text: "No cost data yet." }),
+      h("p", { class: "hint", text: "Cost tracking starts with your next jev-router claude session. The real token counts of each request are recorded as it runs." }));
+  }
+  const withRouter = c.actual + jev, saved = c.without - withRouter, share = c.without ? saved / c.without : 0, max = Math.max(c.without, withRouter);
+  const bar = (label, sub, value, color) => [h("div", {}, h("div", { text: label }), h("div", { class: "muted", style: "font-size:12px", text: sub })),
+    h("div", { style: "display:flex;align-items:center;gap:10px" }, tipTarget(h("div", { class: "bar", style: `width:${Math.max(1, (value / max) * 85)}%;background:${color}` }), money(value), label, sub), h("span", { class: "val", text: money(value) }))];
+  const splits = FAMILIES.filter((f) => c.byFam.get(f.key)).concat(c.byFam.get("manual") ? [{ key: "manual", label: "You picked (/model)", color: "var(--baseline)" }] : []);
+  return h("section", { class: "card" },
+    h("div", { class: "hero" },
+      h("div", {},
+        h("div", { class: "muted", text: saved >= 0 ? "Estimated money saved" : "Estimated extra cost" }),
+        h("div", { class: `big${saved > 0 ? " good" : ""}`, text: money(Math.abs(saved)) }),
+        h("p", { class: "say", text: saved >= 0
+          ? `That's ${Math.round(share * 100)}% less than running every message on ${baselineName()}.`
+          : `Routing cost ${Math.round(-share * 100)}% more than ${baselineName()} for these messages.` })),
+      h("div", {}, h("div", { class: "cmp" },
+        bar("With jev-router", `includes ${money(jev)} for Jev`, withRouter, "var(--accent)"),
+        bar("Without it", `everything on ${baselineName()}`, c.without, "var(--baseline)")))),
+    h("h3", { text: `${compact(c.tokens)} tokens handled, split by model` }),
+    h("div", { class: "split", role: "img", "aria-label": "Share of tokens per model" },
+      splits.map((f) => tipTarget(h("span", { style: `flex:${c.byFam.get(f.key)};background:${f.color}` }), `${pct(c.byFam.get(f.key), c.tokens)} of tokens`, f.label, `${compact(c.byFam.get(f.key))} tokens`))),
+    legend(splits.map((f) => ({ color: f.color, label: `${f.label} ${pct(c.byFam.get(f.key), c.tokens)}` }))),
+    more("How is this calculated?",
+      h("p", { class: "hint", text: `The proxy records the real token counts of each of ${fmt(c.n)} Claude requests: input, output, cache reads and cache writes. "With jev-router" prices them on the model that actually ran, plus the Jev calls. "Without it" prices the same tokens as if every routed request had run on ${baselineName()}. Messages where you picked a model yourself cost the same in both.` }),
+      h("p", { class: "hint", text: "It's an estimate: a different model would have written a different number of tokens, and switching models sometimes costs extra cache writes (those are already counted on the \"with\" side). Prices are Anthropic list prices per token. On a Claude subscription you don't pay per token, so this shows up as more room in your usage limits." })));
+}
+
+function modelCards() {
+  const ds = filteredDecisions().filter(finalOf), total = ds.length;
+  return h("div", { class: "models" }, FAMILIES.map((f) => {
+    const mine = ds.filter((d) => familyOf(finalOf(d)) === f.key);
+    const efforts = [...countBy(mine, (d) => effortOf(finalOf(d)) || "")].filter(([e]) => e).map(([e, n]) => `${e} ×${n}`).join(" · ");
+    return h("section", { class: "card model" }, h("div", { class: "top", style: `background:${f.color}` }),
+      h("div", { style: "font-weight:600" }, f.label), h("div", { class: "desc", text: f.desc }),
+      h("div", { class: "n", text: `${fmt(mine.length)} message${mine.length === 1 ? "" : "s"}` }),
+      h("div", { class: "muted", text: `${pct(mine.length, total)} of all messages` }),
+      efforts ? h("div", { class: "efforts", text: `effort used: ${efforts}` }) : null);
+  }));
+}
+
+function howItWorks() {
+  return card("How jev-router decides", "For every new message you send in a jev-router claude session:",
+    h("div", { class: "steps4" },
+      h("div", {}, h("b", { text: "You send a message" }), "It is paused for about a second."),
+      h("div", {}, h("b", { text: "Jev reads it" }), "Jev answers 9 quick yes/no questions, such as \"is it a small change?\" and \"does it involve security?\" It costs a fraction of a cent."),
+      h("div", {}, h("b", { text: "Rules pick a model" }), "Five small decision trees each suggest a model and effort, and the middle suggestion wins. Safety rules can raise it, for example security work always gets Opus."),
+      h("div", {}, h("b", { text: "Claude answers" }), "Claude Code runs the message on that model. Its tool calls stay on the same model until your next message.")),
+    more("What do these words mean?", h("dl", { class: "gloss" },
+      [["Model", "Which Claude answers: Haiku 4.5 (cheapest), Sonnet 5, or Opus 5.5 (strongest)."],
+       ["Effort", "How much the model thinks before answering: low, medium, high, xhigh or max. More effort gives better answers on hard problems, but it is slower and uses more tokens. Haiku has no effort setting."],
+       ["Model + effort options", "The router chooses from 8 options, cheapest first: Haiku 4.5; Sonnet 5 at low, medium or high effort; Opus 5.5 at medium, high, xhigh or max."],
+       ["Jev", "A small, fast model from TypeSafe that answers yes/no questions with a score from 0 (no) to 1 (yes). Between 0.35 and 0.65 counts as \"not sure\"."],
+       ["Decision tree", "A tiny rule like \"if it's security work, then Opus; otherwise, if it's small, then Haiku...\". Five of them each vote for a model + effort option."],
+       ["Safety rule", "A fixed rule applied after the vote, for example concurrency or security work never goes below Opus 5.5 at medium effort."],
+       ["Tokens", "The units models read and write, roughly ¾ of a word each. You pay per token."]].map(([t, d]) => [h("dt", { text: t }), h("dd", { text: d })]))));
+}
+
+function messageList(ds, limit) {
+  const costsBy = usageByDecision(), bp = $("f-baseline").value;
+  const items = [...ds].reverse().slice(0, limit || ds.length).map((d) => {
+    const rows = costsBy.get(d.id) || [];
+    const c = rows.length ? costs(rows, bp) : null;
+    return h("li", { tabindex: "0", onclick: () => { location.hash = `#/m/${d.id}`; }, onkeydown: (e) => { if (e.key === "Enter") location.hash = `#/m/${d.id}`; } },
+      h("span", { class: "when", text: ago(d.ts), title: new Date(d.ts).toLocaleString() }),
+      h("div", { style: "min-width:0" }, h("div", { class: "msg", text: words(latestOf(d)) || "(empty)", title: latestOf(d) }), h("div", { class: "why", text: `Why: ${shortReason(d)} · ${project(d.cwd)}` })),
+      h("div", { class: "right" }, chip(finalOf(d)),
+        c && c.priced ? h("div", { class: "muted", style: "font-size:13px" }, money(c.actual), c.without - c.actual > 0.00005 ? h("span", { class: "saved", text: `  saved ${money(c.without - c.actual)}` }) : null) : null));
+  });
+  return h("ul", { class: "list" }, items);
+}
+
+// --- Pages -------------------------------------------------------------------------------------
+function pageSummary() {
+  const ds = filteredDecisions();
+  if (!S.decisions.length) return [empty("Nothing here yet. Start Claude Code with `jev-router claude` and send a message.")];
+  return [heroCard(), modelCards(), howItWorks(),
+    card("Recent messages", "Click one to see how its model was chosen.", ds.length ? messageList(ds, 6) : h("p", { class: "muted", text: "No messages match the filters." }),
+      h("p", { class: "hint" }, h("a", { href: "#/messages", text: `All ${fmt(ds.length)} messages →` })))];
+}
+
+function pageMessages() {
+  const ds = filteredDecisions();
+  if (!ds.length) return [empty("No messages match these filters.")];
+  return [card(`${fmt(ds.length)} messages`, "Newest first. For each one: the model it went to, why, and what it cost (once cost tracking has data).", messageList(ds))];
+}
+
+function treeView(node, answers, active, vote, edge, borderline) {
+  const th = { ...S.meta.thresholds, borderline: borderline ?? S.meta.thresholds.borderline };
+  if (node.leaf) return h("li", { class: active ? "on" : "off" }, h("span", { class: "row" }, edge ? h("span", { class: "edge", text: edge }) : null,
+    h("span", { class: `node leaf${active && node.leaf === vote ? " win" : ""}` }, h("i", { class: "sw", style: `background:${fam(node.leaf).color};margin-right:5px` }), friendly(node.leaf))));
+  const p = answers[node.key], unsure = Math.abs(p - th.noul_yes) < th.borderline;
+  return h("li", { class: active ? "on" : "off" },
+    h("span", { class: `row${active && unsure ? " unsure" : ""}` }, edge ? h("span", { class: "edge", text: edge }) : null,
+      h("span", { class: "node", title: QLABEL[node.key] || node.key }, `${QLABEL[node.key] || node.key}? `, h("b", { text: p.toFixed(2) }), active && unsure ? h("span", { class: "muted", text: " not sure, both paths" }) : null)),
+    h("ul", {}, treeView(node.yes, answers, active && (unsure || p > th.noul_yes), vote, "yes", th.borderline), treeView(node.no, answers, active && (unsure || p <= th.noul_yes), vote, "no", th.borderline)));
+}
+
+const RATINGS = [["right", "✓ Right"], ["too_low", "↑ Needed a stronger one"], ["too_high", "↓ A cheaper one would do"]];
+// Three buttons; clicking the active one again clears the rating.
+const rateButtons = (id) => h("div", { class: "fb", role: "group", "aria-label": "Was this the right model?" },
+  RATINGS.map(([k, t]) => h("button", { type: "button", "aria-pressed": String(S.feedback[id] === k), onclick: (e) => { e.stopPropagation(); sendFeedback(id, S.feedback[id] === k ? "clear" : k); }, text: t })));
+
+let rateShowAll = false;
+function rateCard(ok) {
+  const unrated = [...ok].reverse().filter((d) => !S.feedback[d.id]);
+  const rated = [...ok].reverse().filter((d) => S.feedback[d.id]);
+  const rows = (rateShowAll ? [...unrated, ...rated] : unrated.slice(0, 8)).map((d) => h("li", { class: S.feedback[d.id] ? "done" : null },
+    h("div", { style: "min-width:0" },
+      h("div", { class: "msg", text: words(latestOf(d)) || "(empty)", title: "Open this message", onclick: () => { location.hash = `#/m/${d.id}`; } }),
+      h("div", { class: "why" }, chip(finalOf(d)), `  ·  why: ${shortReason(d)}  ·  ${ago(d.ts)}`)),
+    rateButtons(d.id)));
+  const hidden = rateShowAll ? 0 : unrated.length - Math.min(8, unrated.length) + rated.length;
+  return card("Rate the router's choices", `Was each message sent to the right model? ${fmt(unrated.length)} not rated yet. Your ratings show which rules to change, in "Your feedback" below.`,
+    rows.length ? h("ul", { class: "list rate" }, rows) : h("p", { class: "muted", text: "Every message here is rated. Nice." }),
+    hidden || rateShowAll ? h("p", { class: "hint" }, h("button", { type: "button", onclick: () => { rateShowAll = !rateShowAll; render(); }, text: rateShowAll ? "Show only unrated" : `Show all ${fmt(unrated.length + rated.length)} messages` })) : null,
+    h("p", { class: "hint", text: "↑ means the model was too weak for the task. ↓ means a cheaper model would have done it just as well. You can also rate from any message's page." }));
+}
+
+function knobs(t) {
+  const same = (k) => JSON.stringify(t[k]) === JSON.stringify(S.tuning.default[k]);
+  return [
+    ["borderline", "“Not sure” range", `scores ${(0.5 - t.borderline).toFixed(2)}–${(0.5 + t.borderline).toFixed(2)}`],
+    ["disagree_spread", "Trees disagree, go one step stronger", `when the votes are ${t.disagree_spread} or more options apart`],
+    ["clarify_cap_below", "Unclear, so Haiku asks first", t.clarify_cap_below == null ? "switched off" : `when “the request is clear” scores below ${t.clarify_cap_below.toFixed(2)}`],
+    ["offset", "Overall nudge", t.offset === 0 ? "none" : t.offset > 0 ? "one option stronger" : "one option cheaper"],
+  ].map(([k, name, value]) => ({ name, value, isDefault: same(k) }));
+}
+
+function tuningCard() {
+  const t = S.tuning;
+  if (!t) return null;
+  const adjusted = knobs(t.current).some((k) => !k.isDefault);
+  const waiting = t.rated < t.min_ratings;
+  const nextAt = Math.max(t.min_ratings, (t.rated_at_last_run ?? 0) + t.retune_every);
+  const history = [...t.history].reverse().slice(0, 5);
+  return card("Automatic tuning", "The router quietly improves itself from your ratings. You don't have to do anything.",
+    waiting
+      ? [h("div", { class: "hbar", style: "grid-template-columns:1fr 90px" }, h("div", { class: "track" }, h("span", { class: "fill", style: `width:${(t.rated / t.min_ratings) * 100}%` })), h("span", { class: "num", text: `${t.rated} of ${t.min_ratings} ratings` })),
+         h("p", { class: "hint", text: `After ${t.min_ratings} ratings it starts adjusting itself. It checks again after every ${t.retune_every} new ratings.` })]
+      : h("p", { class: "hint", text: `${t.rated} ratings so far. Next check after ${Math.max(0, nextAt - t.rated)} more.` }),
+    h("h3", { text: adjusted ? "Current settings (adjusted from your ratings)" : "Current settings (defaults)" }),
+    h("table", {}, h("tbody", {}, knobs(t.current).map((k) => h("tr", {}, h("td", { text: k.name }), h("td", { text: k.value }), h("td", { class: "muted", text: k.isDefault ? "default" : "adjusted" }))))),
+    history.length ? [h("h3", { text: "History" }), h("ul", { class: "reasons" }, history.map((r) => h("li", {}, h("span", { class: "muted", text: `${ago(r.ts)}: ` }), r.changed ? h("b", { text: "Changed. " }) : null, r.reason)))] : null,
+    adjusted ? h("p", {}, h("button", { type: "button", onclick: async () => { await fetch("/api/tuning/reset", { method: "POST" }); load(); }, text: "Reset to defaults" })) : null,
+    more("How does it decide?",
+      h("p", { class: "hint", text: `It replays every rated message with its saved Jev answers (free, no new Jev calls) under a few hundred small variations of the settings above. A variation is applied only if it satisfies at least ${t.min_gain} more of your ratings and changes none of the messages you marked “Right”. The safety rules (security, concurrency, a previous answer that failed) are never changed. Messages whose Jev questions have since been reworded are left out.` })));
+}
+
+async function sendFeedback(id, label) {
+  const r = await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, label }) });
+  if (r.ok) {
+    if (label === "clear") delete S.feedback[id]; else S.feedback[id] = label;
+    S.tuning = await fetch("/api/tuning").then((x) => x.json()).catch(() => S.tuning);
+    render();
+  }
+}
+
+function pageMessage(id) {
+  const back = h("a", { class: "back", href: "#/messages", text: "← All messages" });
+  const d = S.decisions.find((x) => x.id === id);
+  if (!d) return [back, empty(`No message ${id}.`)];
+  const rung = finalOf(d), th = S.meta.thresholds, state = d.jev.state || {};
+  const text = words(latestOf(d));
+  const head = h("div", {}, back, h("p", { class: "title", text: text.slice(0, 140) + (text.length > 140 ? "…" : "") }),
+    h("div", { class: "muted", text: `${new Date(d.ts).toLocaleString()} · ${project(d.cwd)}` }));
+  const asked = card(null, null, h("div", { class: "step-h" }, h("i", { text: "1" }), h("h2", { text: "What you asked" })),
+    h("p", { class: "lead", text: "Exactly what Jev saw, after secrets were redacted and long text was shortened." }),
+    h("div", { class: "quote", text: latestOf(d) }),
+    (state.history || []).length ? more(`Earlier conversation Jev also saw (${state.history.length} turns)`, state.history.map((t) => h("div", { class: "turn" }, h("span", { text: t.role }), t.text))) : null);
+  if (!rung) return [head, card("Routing failed", "Jev couldn't be reached, so this message kept the previous model (or Sonnet 5 at medium effort if it was the first).", h("p", { class: "err", text: `⚠ ${d.error}` })), asked];
+
+  const c = costs(usageByDecision().get(id) || [], $("f-baseline").value), fb = S.feedback[id];
+  const result = h("section", { class: "card" }, h("div", { class: "result" },
+    h("div", {}, h("div", { class: "muted", text: "Sent to" }), h("div", { class: "picked" }, chip(rung)),
+      h("div", { class: "muted", text: effortOf(rung) ? `The model ${EFFORT[effortOf(rung)] || ""} before answering.` : "Haiku has no effort setting." })),
+    c.priced ? h("div", {}, h("div", { class: "muted", text: "This message cost" }), h("div", { style: "font-size:20px;font-weight:650", text: money(c.actual) }),
+      h("div", { class: "muted", text: `${compact(c.tokens)} tokens over ${c.n} request${c.n === 1 ? "" : "s"} · ${money(c.without)} on ${baselineName()}` })) : h("div", { class: "muted", style: "max-width:260px", text: "No cost data for this message. Cost tracking started after it ran." }),
+    h("span", { class: "spacer" }),
+    h("div", {}, h("div", { class: "muted", style: "margin-bottom:6px", text: "Was this the right model?" }), rateButtons(id))));
+
+  const answers = d.jev.answers, entries = Object.entries(answers);
+  const yes = entries.filter(([, p]) => p > th.clear_yes), unsure = entries.filter(([, p]) => p >= th.clear_no && p <= th.clear_yes), no = entries.filter(([, p]) => p < th.clear_no);
+  const noticed = card(null, null, h("div", { class: "step-h" }, h("i", { text: "2" }), h("h2", { text: "What Jev noticed" })),
+    h("p", { class: "lead", text: "Jev answered 9 yes/no questions about your message." }),
+    yes.length ? [h("h3", { text: "Yes" }), h("div", { class: "signals" }, yes.map(([k, p]) => h("span", { class: "signal yes", title: `score ${p.toFixed(2)}`, text: `✓ ${QLABEL[k] || k}` })))] : null,
+    unsure.length ? [h("h3", { text: "Not sure" }), h("div", { class: "signals" }, unsure.map(([k, p]) => h("span", { class: "signal unsure", title: `score ${p.toFixed(2)}`, text: `? ${QLABEL[k] || k}` })))] : null,
+    no.length ? h("p", { class: "hint", text: `No to: ${no.map(([k]) => QSHORT[k] || k).join(", ")}.` }) : null,
+    more("See all 9 scores", h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
+      entries.map(([k, p]) => h("div", { class: "noul" }, h("span", { text: QLABEL[k] || k }),
+        h("div", { class: "track" }, h("span", { class: "unsure", style: `left:${th.clear_no * 100}%;width:${(th.clear_yes - th.clear_no) * 100}%` }), h("span", { class: "fill", style: `width:${Math.max(1, p * 100)}%` })),
+        h("span", { class: "num", text: p.toFixed(2) }), h("span", { class: "muted", text: p > th.clear_yes ? "yes" : p < th.clear_no ? "no" : "not sure" })))));
+
+  const votes = countBy(Object.values(d.trees), (t) => t.vote);
+  const chosen = card(null, null, h("div", { class: "step-h" }, h("i", { text: "3" }), h("h2", { text: "How the model was chosen" })),
+    h("ol", { class: "reasons" }, (d.why || []).map((w) => h("li", { text: reasonSentence(w) }))),
+    h("div", { class: "ladder", role: "img", "aria-label": "Votes for each model and effort option" }, S.meta.ladder.map((r) => h("div", { class: `option${r.name === rung ? " final" : ""}`, title: friendly(r.name) },
+      h("div", { class: "bar", style: `background:${fam(r.name).color}` }), h("b", { text: fam(r.name).label }), h("span", { class: "muted", text: effortOf(r.name) ? `${effortOf(r.name)} effort` : "no effort" }),
+      h("span", { class: "votes", text: votes.get(r.name) ? `${votes.get(r.name)} vote${votes.get(r.name) > 1 ? "s" : ""}` : "" }),
+      r.name === rung ? h("span", { style: "font-size:11px;font-weight:700", text: "chosen" }) : null))),
+    h("p", { class: "hint", text: "The 8 model + effort options, cheapest on the left. Each of the five decision trees votes once." }),
+    more("See the five decision trees", h("p", { class: "hint", text: "The highlighted path is the one taken. A dashed box means Jev wasn't sure, so both paths count and the stronger result wins." }),
+      h("div", { class: "grid", style: "grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:10px" },
+        Object.entries(S.meta.forest).map(([name, root]) => h("div", { class: "tree" }, h("div", { style: "margin-bottom:4px" }, h("b", { text: `${name} tree` }), h("span", { class: "muted", text: ` → ${friendly(d.trees[name].vote)}` })),
+          h("ul", {}, treeView(root, answers, true, d.trees[name].vote, null, (d.tuning || {}).borderline)))))));
+
+  const f = d.facts || {}, u = d.jev.usage || {};
+  const tech = card(null, null, more("Technical details", h("dl", { class: "kv", style: "margin-top:10px" },
+    [["decision id", d.id], ["model id", `${d.final.model} (effort ${d.final.effort || "none"})`], ["previous model", f.previous_rung ? friendly(f.previous_rung) : "none (first message)"], ["conversation size", `~${fmt(f.context_tokens || 0)} tokens`],
+     ["Jev", `${d.jev.model}, ${fmt(d.jev.latency_ms)} ms, ${fmt(u.input_tokens || 0)} tokens, request ${d.jev.request_id || "–"}`], ["session", d.session_id || "–"], ["source", d.source], ["folder", d.cwd]]
+      .map(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]))));
+  return [head, result, asked, noticed, chosen, tech];
+}
+
+function histogram(values, band) {
+  const W = 240, H = 100, m = { t: 6, r: 6, b: 18, l: 24 }, bins = new Array(10).fill(0);
+  for (const v of values) bins[Math.min(9, Math.floor(v * 10))]++;
+  const max = Math.max(1, ...bins), iw = W - m.l - m.r, ih = H - m.t - m.b, bw = iw / 10, x = (v) => m.l + v * iw, y = (v) => m.t + ih - (v / max) * ih;
+  const root = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
+  root.append(s("rect", { x: x(band[0]), y: m.t, width: x(band[1]) - x(band[0]), height: ih, fill: "var(--band)" }), s("line", { class: "grid-line", x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }));
+  root.append(s("text", { x: m.l - 4, y: y(max) + 4, "text-anchor": "end" }, fmt(max)));
+  bins.forEach((n, i) => {
+    if (!n) return;
+    const x0 = m.l + i * bw + 3, x1 = m.l + (i + 1) * bw - 3, top = y(n), r = Math.min(3, y(0) - top);
+    root.append(s("path", { d: `M${x0},${y(0)}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x1 - r}Q${x1},${top} ${x1},${top + r}V${y(0)}Z`, fill: "var(--accent)" }),
+      tipTarget(s("rect", { class: "hit", x: m.l + i * bw, y: m.t, width: bw, height: ih }), `${n} answer${n === 1 ? "" : "s"}`, `score ${(i / 10).toFixed(1)}–${((i + 1) / 10).toFixed(1)}`));
+  });
+  for (const t of [0, 0.5, 1]) root.append(s("text", { x: x(t), y: H - 4, "text-anchor": t === 0 ? "start" : t === 1 ? "end" : "middle" }, t === 0 ? "0 no" : t === 1 ? "yes 1" : "0.5"));
+  return root;
+}
+
+function pageImprove() {
+  const ok = filteredDecisions().filter(finalOf);
+  if (!ok.length) return [empty("No messages match these filters.")];
+  const th = S.meta.thresholds, n = ok.length;
+  const unsureRows = S.meta.questions.map((q) => {
+    const vs = ok.map((d) => d.jev.answers[q.key]).filter(Number.isFinite);
+    return { q, vs, share: vs.filter((v) => Math.abs(v - th.noul_yes) < th.borderline).length / Math.max(1, vs.length) };
+  }).sort((a, b) => b.share - a.share);
+  const questions = card("Questions Jev is often unsure about", `Share of ${fmt(n)} messages where Jev answered "not sure" (0.35–0.65). A "not sure" makes the trees take the stronger path, which costs more.`,
+    unsureRows.map((r) => h("div", { class: "hbar", title: r.q.instructions }, h("span", { text: QLABEL[r.q.key] || r.q.key }), h("div", {}, h("div", { class: "b", style: `width:${r.share * 100}%` })), h("span", { class: "num", text: pct(r.share * 100, 100) }))),
+    todo("reword any question above about 30% so it has a clearer yes or no answer. The questions live in router.rs (QUESTIONS)."),
+    more("See the score distribution per question", h("div", { class: "hist-grid" }, unsureRows.map((r) => h("div", {}, h("div", { style: "font-size:13px;font-weight:600", text: QLABEL[r.q.key] || r.q.key }), histogram(r.vs, [th.clear_no, th.clear_yes]))))));
+
+  const RULES = { "needs clarification": "Unclear, so Haiku asks first", "security-sensitive": "Security work gets Opus", concurrency: "Concurrency work gets Opus", "last answer": "Previous answer failed, go stronger", "trees disagree": "Trees disagreed, one step stronger", "~": "Long chat, keep the model" };
+  const rule = (w) => { const k = Object.keys(RULES).find((p) => w.startsWith(p)); return k ? RULES[k] : w.split(":")[0]; };
+  const fired = countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule);
+  const rules = card("Safety rules that changed the choice", `How often each rule overrode the trees' vote, out of ${fmt(n)} messages.`,
+    fired.size ? [...fired].sort((a, b) => b[1] - a[1]).map(([k, c]) => h("div", { class: "hbar" }, h("span", { text: k }), h("div", {}, h("div", { class: "b", style: `width:${(c / n) * 100}%` })), h("span", { class: "num", text: pct(c, n) })))
+      : h("p", { class: "muted", text: "No rule fired: every choice was the trees' plain vote." }),
+    todo("a rule that fires very often is doing the trees' job. Consider changing the trees, or the rule's threshold in router.rs (route)."));
+
+  const trees = card("Trees that are usually outvoted", "How often each tree's vote matched the final choice. A tree that rarely matches has little influence.",
+    h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Tree" }), h("th", { class: "r", text: "Matched the choice" }), h("th", { text: "Its usual vote" }))),
+      h("tbody", {}, Object.keys(S.meta.forest).map((name) => {
+        const common = [...countBy(ok, (d) => d.trees[name].vote)].sort((a, b) => b[1] - a[1])[0];
+        return h("tr", {}, h("td", { text: name }), h("td", { class: "r", text: pct(ok.filter((d) => d.trees[name].vote === finalOf(d)).length, n) }), h("td", {}, chip(common[0])));
+      }))));
+
+  const labelled = ok.filter((d) => S.feedback[d.id]);
+  const fb = card("Your feedback", `${fmt(labelled.length)} of ${fmt(n)} messages rated, using the "Rate the router's choices" card above.`,
+    labelled.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Model chosen", "Right", "Needed stronger", "Cheaper would do"].map((t, i) => h("th", { class: i ? "r" : null, text: t })))),
+      h("tbody", {}, S.meta.ladder.map((r) => r.name).filter((r) => labelled.some((d) => finalOf(d) === r)).map((r) => h("tr", {}, h("td", {}, chip(r)),
+        ["right", "too_low", "too_high"].map((k) => h("td", { class: "r", text: fmt(labelled.filter((d) => finalOf(d) === r && S.feedback[d.id] === k).length) }))))))
+      : h("p", { class: "muted", text: "No ratings yet." }),
+    todo('many "needed a stronger one" for one model means the trees or rules should send more work to a stronger option. Many "a cheaper one would do" means the opposite.'));
+
+  const recs = filteredUsage(), bp = $("f-baseline").value;
+  const byRung = new Map();
+  for (const r of recs) { const k = r.kind === "manual" ? `manual:${r.model}` : r.rung; byRung.set(k, [...(byRung.get(k) || []), r]); }
+  const order = (k) => { const i = S.meta.ladder.findIndex((l) => l.name === k); return i < 0 ? 99 : i; };
+  const spend = card("Where the tokens and money went", `Every Claude request, grouped by the model and effort it ran on. Compared against ${baselineName()}.`,
+    recs.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Model", "Requests", "Tokens", "Cost", `On ${baselineName()}`].map((t, i) => h("th", { class: i ? "r" : null, text: t })))),
+      h("tbody", {}, [...byRung].sort((a, b) => order(a[0]) - order(b[0])).map(([k, rs]) => {
+        const c = costs(rs, bp);
+        return h("tr", {}, h("td", {}, k.startsWith("manual:") ? h("span", { text: `You picked ${(priceFor(k.slice(7)) || {}).name || k.slice(7)}` }) : chip(k)), h("td", { class: "r", text: fmt(rs.length) }), h("td", { class: "r", text: compact(c.tokens) }), h("td", { class: "r", text: money(c.actual) }), h("td", { class: "r", text: money(c.without) }));
+      })))
+      : h("p", { class: "muted", text: "No cost data yet. It starts with your next jev-router claude session." }));
+  return [h("p", { class: "lead", text: "Use this page to tune the router: rate its choices first, then use the cards below to see what to change." }), rateCard(ok), tuningCard(), questions, h("div", { class: "grid" }, rules, trees), h("div", { class: "grid" }, fb, spend)];
+}
+
+// --- Routing, filters, loading -------------------------------------------------------------
+function render() {
+  tip.style.display = "none";
+  const [view, arg] = (location.hash.replace(/^#\//, "") || "summary").split("/");
+  document.querySelectorAll("nav a").forEach((a) => a.setAttribute("aria-current", a.dataset.view === view || (view === "m" && a.dataset.view === "messages") ? "page" : "false"));
+  $("filters").style.display = view === "m" ? "none" : "";
+  if (!S.meta) return;
+  const parts = view === "m" ? pageMessage(decodeURIComponent(arg || "")) : view === "messages" ? pageMessages() : view === "improve" ? pageImprove() : pageSummary();
+  $("view").replaceChildren(h("div", { class: "stack" }, parts));
+}
+
+function fillSelect(id, values, labelOf = (v) => v, first = "All") {
+  const sel = $(id), keep = sel.value;
+  sel.replaceChildren(...(first ? [h("option", { value: "", text: first })] : []), ...values.map((v) => h("option", { value: v, text: labelOf(v), title: v })));
+  if (values.includes(keep)) sel.value = keep;
+}
+const store = { get: (k, d) => { try { return localStorage.getItem(k) || d; } catch (_) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* storage blocked */ } } };
+
+async function load() {
+  $("view").classList.add("loading");
+  try {
+    const get = (p) => fetch(p).then((r) => { if (!r.ok) throw new Error(`${p}: ${r.status}`); return r.json(); });
+    const [decisions, usage, meta, feedback, proxy, tuning] = await Promise.all(["/api/decisions", "/api/usage", "/api/meta", "/api/feedback", "/api/proxy", "/api/tuning"].map(get));
+    const first = !S.meta;
+    Object.assign(S, { decisions, usage, meta, feedback, proxy, tuning });
+    fillSelect("f-source", [...new Set(decisions.map((d) => d.source))].sort());
+    fillSelect("f-project", [...new Set(decisions.map((d) => d.cwd).filter(Boolean))].sort(), project);
+    fillSelect("f-rung", meta.ladder.map((r) => r.name), friendly);
+    if (first) {
+      fillSelect("f-baseline", ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"], (k) => `${meta.pricing[k].name} for everything`, null);
+      $("f-baseline").value = store.get("jev-baseline", "claude-opus-5-5");
+    }
+    $("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    render();
+  } catch (e) {
+    $("view").replaceChildren(empty(`Could not load data: ${e.message}. Is jev-router dashboard still running?`));
+  } finally {
+    $("view").classList.remove("loading");
+  }
+}
+
+const THEMES = ["system", "light", "dark"];
+let theme = store.get("jev-theme", "system");
+const applyTheme = () => { if (theme === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", theme); $("theme").textContent = `Theme: ${theme}`; };
+applyTheme();
+$("theme").addEventListener("click", () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; applyTheme(); store.set("jev-theme", theme); });
+$("more-toggle").addEventListener("click", (e) => { const open = $("filters").classList.toggle("open"); e.currentTarget.setAttribute("aria-expanded", String(open)); e.currentTarget.textContent = open ? "Fewer filters" : "More filters"; });
+for (const id of ["f-range", "f-source", "f-project", "f-rung"]) $(id).addEventListener("change", render);
+$("f-baseline").addEventListener("change", () => { store.set("jev-baseline", $("f-baseline").value); render(); });
+$("f-search").addEventListener("input", render);
+$("refresh").addEventListener("click", load);
+window.addEventListener("hashchange", () => { render(); scrollTo(0, 0); });
+// Watch live sessions, but never re-render under an open "show more" or a focused control.
+setInterval(() => { if (document.visibilityState === "visible" && !document.querySelector("details[open]") && !["INPUT", "SELECT"].includes((document.activeElement || {}).tagName)) load(); }, 30000);
+load();
+</script>
+</body>
+</html>
