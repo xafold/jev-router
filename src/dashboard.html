@@ -187,6 +187,14 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .mid .dot.m { outline: 2px solid var(--text); outline-offset: 2px; margin: 0 3px; }
 .rail { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; border: 1px dashed var(--muted); border-radius: 8px; padding: 4px 10px; }
 .final-box { color: #fff; border-radius: 12px; padding: 8px 20px; font-weight: 650; font-size: 15px; text-align: center; }
+/* Equal-height cards in a row, so every connector line meets its card. */
+.flow .fcell > .tcard { flex: 1; }
+/* A pulse flows down the lit lines; steps appear top to bottom once per message. */
+.flow .stem.on { background: linear-gradient(to bottom, var(--accent) 0 30%, color-mix(in srgb, var(--accent) 30%, #fff) 50%, var(--accent) 70% 100%); background-size: 100% 300%; animation: flow-down 1.4s linear infinite; }
+@keyframes flow-down { from { background-position: 0 100%; } to { background-position: 0 0; } }
+.flow-in.enter > * { animation: flow-step .4s ease-out both; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes flow-step { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .flow .stem.on, .flow-in.enter > * { animation: none; } }
 .final-box span { display: block; font-weight: 400; font-size: 12px; opacity: .9; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
 .kv dt { color: var(--text-2); }
@@ -610,13 +618,30 @@ const RAIL = [["unsure between", "unsure type, harder one"], ["reasoning depth",
   ["asks for tests", "tests, more effort"], ["not clearly simple", "not clearly simple, no Haiku"], ["you asked", "you asked for it"], ["asks for a stronger", "asked for stronger"],
   ["irreversible", "irreversible rule"], ["needs clarification: cap -> sonnet", "unclear, Sonnet asks"], ["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
   ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["context tokens", "long chat, no downgrade"]];
-const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design" };
+const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design", repeat_failure: "failed again",
+  compound: "several tasks", asks_quality: "asks for care", unfamiliar_domain: "specialist", can_start: "can start", missing_user_info: "needs your info",
+  asks_stronger_model: "asks stronger" };
 const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : ""}`;
 
 // The notebook's forest figure: each tree's path, votes grouped by option, the middle vote,
 // then any rule that moved it, then the final choice. Trees that voted for the middle are lit.
+// Number the figure's steps for the staggered entry; play it only when a new message opens,
+// not on the 30 s refresh.
+let flowShown = null;
+function animateFlow(fig, id) {
+  const inner = fig.querySelector(".flow-in");
+  [...inner.children].forEach((c, i) => c.style.setProperty("--i", i));
+  if (flowShown !== id) inner.classList.add("enter");
+  flowShown = id;
+  return fig;
+}
+
 function decisionFlow(d) {
-  if (d.rules === "v2") return decisionFlowV2(d);
+  if (d.rules === "v2") return animateFlow(decisionFlowV2(d), d.id);
+  return animateFlow(decisionFlowV1(d), d.id);
+}
+
+function decisionFlowV1(d) {
   const order = (r) => S.meta.ladder.findIndex((l) => l.name === r);
   const trees = Object.entries(d.trees), median = d.median || (d.why[0] || "").split(": ")[1];
   const groups = [...new Set(trees.map(([, t]) => t.vote))].sort((a, b) => order(a) - order(b));
@@ -653,11 +678,20 @@ function decisionFlow(d) {
 // v2: request type + reasoning depth + reading breadth -> starting option -> rules -> final.
 // Same figure parts as the tree view: three lit cards, one stem, a pill, rule rails, the final.
 function decisionFlowV2(d) {
-  const st = d.jev.structured || {}, i = d.intent || {};
+  const st = d.jev.structured || {}, i = d.intent || {}, a = d.jev.answers || {}, th = S.meta.thresholds;
   const start = ((d.why[0] || "").match(/start at (\S+)$/) || [])[1];
   const level = (k) => { const x = (st[k] || {}).score; return Number.isFinite(x) ? `${x.toFixed(1)} of 3` : "–"; };
-  const box = (title, rows) => h("div", { class: "fcell on" }, h("div", { class: "tcard on" }, h("b", { text: title }),
-    rows.map(([k, v]) => h("div", { class: "tq" }, h("span", { text: k }), h("span", { class: "a yes", text: v })))));
+  const row = (label, v, cls, title) => h("div", { class: "tq", title: title || label }, h("span", { text: label }), h("span", { class: `a${cls ? ` ${cls}` : ""}`, text: v }));
+  // Yes/no checks, same marks as the tree view: bold yes, dashed "?" when unsure.
+  const check = (k) => {
+    const p = a[k];
+    if (!Number.isFinite(p)) return null;
+    const cls = p > th.clear_yes ? "yes" : p >= th.clear_no ? "unsure" : "";
+    return row(FLOWQ[k] || k, `${p.toFixed(2)} ${cls === "yes" ? "yes" : cls ? "?" : "no"}`, cls, QLABEL[k]);
+  };
+  const box = (title, rows, on) => h("div", { class: `fcell${on ? " on" : ""}` }, h("div", { class: `tcard ${on ? "on" : "off"}` }, h("b", { text: title }), rows));
+  // A check card is lit when one of its checks fired (yes) or was unsure.
+  const group = (title, keys, lit = (k, p) => p >= th.clear_no) => box(title, keys.map(check), keys.some((k) => Number.isFinite(a[k]) && lit(k, a[k])));
   const rails = (d.why || []).slice(1).map((w) => {
     const label = (RAIL.find(([k]) => w.startsWith(k)) || [null, w.split(":")[0]])[1], to = [...w.matchAll(/-> ([a-z0-9.\-]+(?:\/[a-z]+)?)/g)].pop();
     return [h("div", { class: "stem on" }), h("div", { class: "rail", title: reasonSentence(w) }, h("span", { text: label }), to ? h("b", { text: `→ ${shortRung(to[1])}` }) : null)];
@@ -666,10 +700,14 @@ function decisionFlowV2(d) {
   return h("div", { class: "flow", role: "img", "aria-label": (d.why || []).map(reasonSentence).join(" ") },
     h("div", { class: "flow-in" },
       h("div", { class: "frow" },
-        box("Request type", [[INTENT_LABEL[i.choice] || i.choice || "?", (i.confidence ?? 0).toFixed(2)], ["runner-up", INTENT_LABEL[i.runner_up] || i.runner_up || "–"]]),
-        box("Reasoning", [["depth", level("depth")]]),
-        box("Reading", [["breadth", level("breadth")]])),
-      start ? [h("span", { class: "pill on" }, h("i", { class: "sw", style: `background:${fam(start).color}` }), `starts at ${shortRung(start)}`)] : null,
+        box("Request type", [row(INTENT_LABEL[i.choice] || i.choice || "?", (i.confidence ?? 0).toFixed(2), "yes", "Jev's pick and its confidence"), row("runner-up", INTENT_LABEL[i.runner_up] || i.runner_up || "–")], true),
+        box("Reasoning", [row("depth", level("depth"), "yes", "0 lookup · 1 straightforward · 2 multi-step · 3 trade-offs or subtle")], true),
+        box("Reading", [row("breadth", level("breadth"), "yes", "0 none · 1 one file · 2 several files · 3 much of the repo")], true),
+        group("Risk", ["security", "concurrency", "irreversible", "prior_failed", "repeat_failure"]),
+        group("Effort cues", ["compound", "asks_quality", "tests", "perf", "unfamiliar_domain"]),
+        group("Clarity", ["can_start", "missing_user_info", "asks_stronger_model"], (k, p) => (k === "can_start" ? p < th.clear_yes : p >= th.clear_no))),
+      h("div", { class: "stem on" }),
+      start ? h("span", { class: "pill on" }, h("i", { class: "sw", style: `background:${fam(start).color}` }), `starts at ${shortRung(start)}`) : null,
       rails,
       h("div", { class: "stem on" }),
       h("div", { class: "final-box", style: `background:${fam(rung).color}` }, fam(rung).label, h("span", { text: effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting" }))));
