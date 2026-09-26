@@ -194,7 +194,23 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space:
 @keyframes flow-down { from { background-position: 0 100%; } to { background-position: 0 0; } }
 .flow-in.enter > * { animation: flow-step .4s ease-out both; animation-delay: calc(var(--i, 0) * 120ms); }
 @keyframes flow-step { from { opacity: 0; transform: translateY(-6px); } }
-@media (prefers-reduced-motion: reduce) { .flow .stem.on, .flow-in.enter > * { animation: none; } }
+/* Lit connectors under the cards: the borders become two thin gradient layers (down line,
+   bar) so the pulse runs down from each card and along the bar toward the middle.
+   .fr = left of the row's center (flows right), .fl = right of it (flows left). */
+.flow { --pulse-v: linear-gradient(to bottom, var(--accent) 0 30%, color-mix(in srgb, var(--accent) 30%, #fff) 50%, var(--accent) 70% 100%);
+        --pulse-h: linear-gradient(to right, var(--accent) 0 30%, color-mix(in srgb, var(--accent) 30%, #fff) 50%, var(--accent) 70% 100%); }
+.flow .fcell.on::before, .flow .fcell.on::after { border-color: transparent; background-origin: border-box; background-repeat: no-repeat; }
+.flow .fcell.on::before { background-image: var(--pulse-h); background-size: 300% 2px; background-position: 0 100%; animation: flow-h-r 1.4s linear infinite; }
+.flow .fcell.on::after { background-image: var(--pulse-v), var(--pulse-h); background-size: 2px 300%, 300% 2px; background-position: 0 0, 0 100%; animation: flow-vh-l 1.4s linear infinite; }
+.flow .fcell.on.fr::after { animation-name: flow-vh-r; }
+.flow .fcell.on.fl::before { animation-name: flow-h-l; }
+.flow .fcell.on:first-child::before { background: none; }
+.flow .fcell.on:last-child::after { background-image: var(--pulse-v); background-size: 2px 300%; }
+@keyframes flow-h-r { from { background-position: 100% 100%; } to { background-position: 0% 100%; } }
+@keyframes flow-h-l { from { background-position: 0% 100%; } to { background-position: 100% 100%; } }
+@keyframes flow-vh-r { from { background-position: 0 100%, 100% 100%; } to { background-position: 0 0, 0% 100%; } }
+@keyframes flow-vh-l { from { background-position: 0 100%, 0% 100%; } to { background-position: 0 0, 100% 100%; } }
+@media (prefers-reduced-motion: reduce) { .flow .stem.on, .flow-in.enter > *, .flow .fcell.on::before, .flow .fcell.on::after { animation: none; } }
 .final-box span { display: block; font-weight: 400; font-size: 12px; opacity: .9; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
 .kv dt { color: var(--text-2); }
@@ -630,6 +646,11 @@ const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : 
 let flowShown = null;
 function animateFlow(fig, id) {
   const inner = fig.querySelector(".flow-in");
+  // Which way each cell's bar segments flow: toward the middle of its row.
+  for (const row of fig.querySelectorAll(".frow")) {
+    const cells = [...row.children].filter((c) => c.classList.contains("fcell")), mid = (cells.length - 1) / 2;
+    cells.forEach((c, i) => c.classList.add(i < mid ? "fr" : i > mid ? "fl" : "fc"));
+  }
   [...inner.children].forEach((c, i) => c.style.setProperty("--i", i));
   if (flowShown !== id) inner.classList.add("enter");
   flowShown = id;
