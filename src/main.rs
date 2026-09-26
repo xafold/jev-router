@@ -24,6 +24,7 @@ const USAGE: &str =
   jev-router statusline             status-line command: the rung this session is on
   jev-router dashboard [--port N]   local web dashboard of decisions (default port 8765)
   jev-router tune [--apply|--reset] auto-tuning from feedback: dry run, apply now, or reset
+  jev-router golden [--record]      score v1 vs v2 rules on tests/golden.jsonl (--record asks Jev)
   jev-router --version              print the version
 
 Decisions are appended as JSON lines to $CLAUDE_ROUTER_LOG
@@ -300,6 +301,26 @@ fn main() {
                 "{}",
                 serde_json::to_string_pretty(&record).unwrap_or_default()
             );
+        }
+        Some("golden") => {
+            let report = if args.get(1).is_some_and(|a| a == "--record") {
+                jev_router::golden::record().map(|_| {
+                    jev_router::golden::recorded().map(|s| jev_router::golden::evaluate(&s))
+                })
+            } else {
+                Ok(jev_router::golden::recorded().map(|s| jev_router::golden::evaluate(&s)))
+            };
+            match report {
+                Ok(Some(r)) => println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default()),
+                Ok(None) => {
+                    eprintln!("jev-router: no answers recorded for the current questions; run `jev-router golden --record`");
+                    exit(1);
+                }
+                Err(error) => {
+                    eprintln!("jev-router: {error}");
+                    exit(1);
+                }
+            }
         }
         Some("dashboard") => {
             let port = match &args[1..] {

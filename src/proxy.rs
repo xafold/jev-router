@@ -99,6 +99,35 @@ fn has_tools(body: &Value) -> bool {
     body["tools"].as_array().is_some_and(|t| !t.is_empty())
 }
 
+/// Prompts Claude Code writes itself (prompt suggestions, the away recap); they arrive with
+/// tools like a user turn. Re-check these markers when Claude Code changes version.
+const INTERNAL_MARKERS: [&str; 2] = [
+    "[SUGGESTION MODE:",
+    "The user stepped away and is coming back.",
+];
+
+pub fn is_internal(text: &str) -> bool {
+    INTERNAL_MARKERS
+        .iter()
+        .any(|m| text.trim_start().starts_with(m))
+}
+
+/// "continue", "yes, do it", "ok go ahead": the user is carrying on the current task.
+/// ponytail: fixed English vocabulary; anything else goes to Jev as usual.
+pub fn is_continuation(text: &str) -> bool {
+    const WORDS: [&str; 26] = [
+        "yes", "y", "yep", "yeah", "ok", "okay", "sure", "please", "continue", "go", "on", "ahead",
+        "do", "it", "proceed", "keep", "going", "carry", "sounds", "good", "lgtm", "that", "then",
+        "now", "and", "thanks",
+    ];
+    let lower = text.to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    !words.is_empty() && text.len() <= 40 && words.iter().all(|w| WORDS.contains(w))
+}
+
 /// Index of the user message this request answers. Claude Code appends mid-conversation
 /// `role: "system"` messages (hook output, reminders) after it, so skip those.
 pub fn latest_user(messages: &[Value]) -> Option<usize> {
@@ -419,6 +448,12 @@ impl Router {
         let key = conversation_key(body);
         let mut state = self.load(&key);
         let mut prompt = fresh_prompt(body);
+        // Claude Code's own side requests (suggestions, recaps) and "continue"-style replies
+        // skip Jev and keep the pinned rung: no extra latency, and no cache rebuild.
+        let internal = prompt.as_deref().is_some_and(is_internal);
+        if internal || (state.rung.is_some() && prompt.as_deref().is_some_and(is_continuation)) {
+            prompt = None;
+        }
         // Claude Code retries a failed request with the same prompt: keep that turn's rung.
         let turn = (
             latest_user(messages_of(body)),
@@ -455,9 +490,11 @@ impl Router {
                 }
             }
         }
-        let rung = state
-            .rung
-            .unwrap_or(if tools { AGENT_FALLBACK } else { AUX_RUNG });
+        let rung = state.rung.unwrap_or(if tools && !internal {
+            AGENT_FALLBACK
+        } else {
+            AUX_RUNG
+        });
         apply_rung(body, rung);
         if prompt.is_some() {
             self.status(
@@ -921,6 +958,34 @@ mod tests {
             json!({"input_tokens": 5, "output_tokens": 7})
         );
         assert!(UsageTap::default().finish().is_none());
+    }
+
+    #[test]
+    fn side_requests_and_continuations_skip_jev() {
+        assert!(is_internal(
+            "[SUGGESTION MODE: Suggest what the user might type next.]"
+        ));
+        assert!(is_internal(
+            "The user stepped away and is coming back. Recap in under 40 words"
+        ));
+        assert!(!is_internal("explain the suggestion mode"));
+        for t in [
+            "continue",
+            "yes, do it",
+            "ok go ahead",
+            "Proceed.",
+            "sounds good, thanks",
+        ] {
+            assert!(is_continuation(t), "{t}");
+        }
+        for t in [
+            "no",
+            "yes but use sqlite instead",
+            "fix it",
+            "continue with the auth refactor and add tests",
+        ] {
+            assert!(!is_continuation(t), "{t}");
+        }
     }
 
     #[test]

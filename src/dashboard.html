@@ -247,8 +247,18 @@ const QLABEL = {
   security: "It involves security or sensitive data",
   tests: "It asks for tests",
   open_ended: "It's open-ended system design",
+  can_start: "It can start without asking the user",
+  missing_user_info: "It lacks info only the user has",
+  repeat_failure: "It's the second report of a failure",
+  irreversible: "It could destroy data or touch production",
+  asks_quality: "It asks for thoroughness",
+  asks_stronger_model: "It asks for a stronger model",
+  compound: "It contains several tasks",
+  unfamiliar_domain: "It needs specialist knowledge",
 };
-const QSHORT = { clarified: "clear request", trivial: "small change", multi_component: "several parts", perf: "performance needs", concurrency: "concurrency", prior_failed: "previous answer failed", security: "security", tests: "tests", open_ended: "system design" };
+const QSHORT = { clarified: "clear request", trivial: "small change", multi_component: "several parts", perf: "performance needs", concurrency: "concurrency", prior_failed: "previous answer failed", security: "security", tests: "tests", open_ended: "system design",
+  can_start: "can start", missing_user_info: "needs user info", repeat_failure: "failed again", irreversible: "irreversible",
+  asks_quality: "asks for care", asks_stronger_model: "asks for stronger model", compound: "several tasks", unfamiliar_domain: "specialist domain" };
 const familyOf = (rung) => (rung || "").split(/[-/]/)[0];
 const fam = (rung) => FAMILIES.find((f) => f.key === familyOf(rung)) || { label: rung || "?", color: "var(--muted)" };
 const effortOf = (rung) => (rung || "").split("/")[1] || null;
@@ -261,6 +271,12 @@ function reasonSentence(w) {
   let m;
   if ((m = w.match(/^median of votes: (.+)$/))) return `The five decision trees' middle vote was ${friendly(m[1])}.`;
   if ((m = w.match(/^trees disagree \(spread (\d+) rungs\): \+1 -> (.+)$/))) return `The trees disagreed a lot, so it picked one step stronger to be safe: ${friendly(m[2])}.`;
+  if ((m = w.match(/^request type: (\w+) \(([\d.]+)\) -> start at (.+)$/))) return `Jev read it as ${INTENT_LABEL[m[1]] || m[1]} (confidence ${m[2]}), which starts at ${friendly(m[3])}.`;
+  if ((m = w.match(/^needs clarification: cap -> (.+)$/)) && m[1] !== "haiku-4.5") return `Your message looked unclear and needs information only you have, so ${friendly(m[1])} asks first.`;
+  if ((m = w.match(/^more effort: (.+) -> (.+)$/))) return `More effort because it ${m[1]}: ${friendly(m[2])}.`;
+  if ((m = w.match(/^not clearly simple: no Haiku -> (.+)$/))) return `Haiku needs every signal to say "simple"; not all did, so ${friendly(m[1])}.`;
+  if ((m = w.match(/^you asked for a model: -> (.+)$/))) return `You asked for ${friendly(m[1])}.`;
+  if ((m = w.match(/^irreversible: floor -> (.+)$/))) return `It could destroy data or touch production, so at least ${friendly(m[1])}.`;
   if (w.startsWith("needs clarification")) return "Your message looked unclear, so the cheapest model asks clarifying questions first.";
   if ((m = w.match(/^security-sensitive: floor -> (.+)$/))) return `Security work always gets at least ${friendly(m[1])}.`;
   if ((m = w.match(/^concurrency: floor -> (.+)$/))) return `Concurrency work always gets at least ${friendly(m[1])}.`;
@@ -271,13 +287,19 @@ function reasonSentence(w) {
 function shortReason(d) {
   if (!d.final) return "couldn't reach Jev; kept the previous model";
   const w = (d.why || []).slice(1).map((x) => x.split(":")[0]).pop() || "";
+  if (d.rules === "v2" && w.startsWith("request type")) return INTENT_LABEL[(d.intent || {}).choice] || "request type";
   if (w.startsWith("needs clarification")) return "unclear, so it asks first";
+  if (w.startsWith("more effort")) return "more effort";
+  if (w.startsWith("not clearly simple")) return "not clearly simple";
+  if (w.startsWith("you asked")) return "you asked for this model";
+  if (w.startsWith("asks for a stronger")) return "asked for a stronger model";
+  if (w.startsWith("irreversible")) return "irreversible action rule";
   if (w.startsWith("security")) return "security rule";
   if (w.startsWith("concurrency")) return "concurrency rule";
   if (w.startsWith("last answer")) return "previous answer failed";
   if (w.includes("context tokens")) return "long chat, kept the model";
   if (w.startsWith("trees disagree")) return "trees disagreed, one step stronger";
-  const yes = Object.entries(d.jev.answers || {}).filter(([k, p]) => k !== "clarified" && p > S.meta.thresholds.clear_yes).map(([k]) => QSHORT[k] || k);
+  const yes = Object.entries(d.jev.answers || {}).filter(([k, p]) => k !== "clarified" && k !== "can_start" && p > S.meta.thresholds.clear_yes).map(([k]) => QSHORT[k] || k);
   return yes.length ? yes.join(", ") : "nothing special";
 }
 
@@ -419,15 +441,16 @@ function howItWorks() {
   return card("How jev-router decides", "For every new message you send in a jev-router claude session:",
     h("div", { class: "steps4" },
       h("div", {}, h("b", { text: "You send a message" }), "It is paused for about a second."),
-      h("div", {}, h("b", { text: "Jev reads it" }), "Jev answers 9 quick yes/no questions, such as \"is it a small change?\" and \"does it involve security?\" It costs a fraction of a cent."),
-      h("div", {}, h("b", { text: "Rules pick a model" }), "Five small decision trees each suggest a model and effort, and the middle suggestion wins. Safety rules can raise it, for example security work always gets Opus."),
+      h("div", {}, h("b", { text: "Jev reads it" }), "Jev picks the kind of request (explain, fix, design, chat...), rates how much reasoning and reading it needs, and answers quick yes/no questions such as \"does it involve security?\" One call, a fraction of a cent."),
+      h("div", {}, h("b", { text: "Rules pick a model" }), "The kind of request sets a starting model and effort; deep reasoning moves it to a stronger model, broad reading to more effort. Haiku only when everything says simple. Safety rules can raise it, for example security work always gets Opus."),
       h("div", {}, h("b", { text: "Claude answers" }), "Claude Code runs the message on that model. Its tool calls stay on the same model until your next message.")),
     more("What do these words mean?", h("dl", { class: "gloss" },
       [["Model", "Which Claude answers: Haiku 4.5 (cheapest), Sonnet 5, or Opus 5.5 (strongest)."],
        ["Effort", "How much the model thinks before answering: low, medium, high, xhigh or max. More effort gives better answers on hard problems, but it is slower and uses more tokens. Haiku has no effort setting."],
        ["Model + effort options", "The router chooses from 8 options, cheapest first: Haiku 4.5; Sonnet 5 at low, medium or high effort; Opus 5.5 at medium, high, xhigh or max."],
        ["Jev", "A small, fast model from TypeSafe that answers yes/no questions with a score from 0 (no) to 1 (yes). Between 0.35 and 0.65 counts as \"not sure\"."],
-       ["Decision tree", "A tiny rule like \"if it's security work, then Opus; otherwise, if it's small, then Haiku...\". Five of them each vote for a model + effort option."],
+       ["Request type", "One of 13 kinds, such as explain code, review, plan / design, debug / fix or chat. Each has a starting model + effort option (router.rs, INTENTS)."],
+       ["Decision tree", "Older rules (JEV_ROUTER_RULES=v1): five tiny if/then trees vote and the middle vote wins. Still computed for comparison."],
        ["Safety rule", "A fixed rule applied after the vote, for example concurrency or security work never goes below Opus 5.5 at medium effort."],
        ["Tokens", "The units models read and write, roughly ¾ of a word each. You pay per token."]].map(([t, d]) => [h("dt", { text: t }), h("dd", { text: d })]))));
 }
@@ -469,6 +492,7 @@ const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : 
 // The notebook's forest figure: each tree's path, votes grouped by option, the middle vote,
 // then any rule that moved it, then the final choice. Trees that voted for the middle are lit.
 function decisionFlow(d) {
+  if (d.rules === "v2") return decisionFlowV2(d);
   const order = (r) => S.meta.ladder.findIndex((l) => l.name === r);
   const trees = Object.entries(d.trees), median = d.median || (d.why[0] || "").split(": ")[1];
   const groups = [...new Set(trees.map(([, t]) => t.vote))].sort((a, b) => order(a) - order(b));
@@ -501,6 +525,35 @@ function decisionFlow(d) {
       h("div", { class: "stem on" }),
       h("div", { class: "final-box", style: `background:${fam(rung).color}` }, fam(rung).label, h("span", { text: effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting" }))));
 }
+
+// v2: request type + reasoning depth + reading breadth -> starting option -> rules -> final.
+function decisionFlowV2(d) {
+  const st = d.jev.structured || {}, i = d.intent || {};
+  const start = ((d.why[0] || "").match(/start at (\S+)$/) || [])[1];
+  const box = (title, rows) => h("div", { class: "fcell on" }, h("div", { class: "tcard on" }, h("b", { text: title }),
+    rows.map(([k, v]) => h("div", { class: "tq" }, h("span", { text: k }), h("span", { class: "a yes", text: v })))));
+  const level = (k) => { const x = (st[k] || {}).score; return Number.isFinite(x) ? `${x.toFixed(1)} of 3` : "–"; };
+  const rails = (d.why || []).slice(1).map((w) => {
+    const to = [...w.matchAll(/-> ([a-z0-9.\-]+(?:\/[a-z]+)?)/g)].pop();
+    return [h("div", { class: "stem on" }), h("div", { class: "rail", title: reasonSentence(w) }, h("span", { text: w.split(":")[0] }), to ? h("b", { text: `→ ${shortRung(to[1])}` }) : null)];
+  });
+  const rung = finalOf(d);
+  return h("div", { class: "flow", role: "img", "aria-label": (d.why || []).map(reasonSentence).join(" ") },
+    h("div", { class: "flow-in" },
+      h("div", { class: "frow" },
+        box("Request type", [[INTENT_LABEL[i.choice] || i.choice || "?", (i.confidence ?? 0).toFixed(2)], ["runner-up", INTENT_LABEL[i.runner_up] || i.runner_up || "–"]]),
+        box("Reasoning", [["depth", level("depth")]]),
+        box("Reading", [["breadth", level("breadth")]])),
+      h("div", { class: "stem on" }),
+      start ? h("span", { class: "pill on" }, h("i", { class: "sw", style: `background:${fam(start).color}` }), `starts at ${shortRung(start)}`) : null,
+      rails,
+      h("div", { class: "stem on" }),
+      h("div", { class: "final-box", style: `background:${fam(rung).color}` }, fam(rung).label, h("span", { text: effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting" }))));
+}
+
+const INTENT_LABEL = { chat: "chat", general_knowledge: "general question", off_topic: "off-topic", lookup: "lookup", explain_code: "explain code",
+  review_audit: "review / audit", plan_design: "plan / design", debug_fix: "debug / fix", implement: "implement", refactor_migrate: "refactor / migrate",
+  ops_config: "ops / config", write_text: "writing", other: "other" };
 
 const RATINGS = [["right", "✓ Right"], ["too_low", "↑ Needed a stronger one"], ["too_high", "↓ A cheaper one would do"]];
 // Three buttons; clicking the active one again clears the rating.
@@ -588,7 +641,7 @@ function pageMessage(id) {
   const answers = d.jev.answers, entries = Object.entries(answers);
   const chosen = card(null, null, h("div", { class: "step-h" }, h("i", { text: "2" }), h("h2", { text: "How it decided" })),
     decisionFlow(d),
-    more("All 9 Jev answers", h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
+    more(`All ${entries.length} Jev yes/no answers`, h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
       entries.map(([k, p]) => h("div", { class: "noul" }, h("span", { text: QLABEL[k] || k }),
         h("div", { class: "track" }, h("span", { class: "unsure", style: `left:${th.clear_no * 100}%;width:${(th.clear_yes - th.clear_no) * 100}%` }), h("span", { class: "fill", style: `width:${Math.max(1, p * 100)}%` })),
         h("span", { class: "num", text: p.toFixed(2) }), h("span", { class: "muted", text: p > th.clear_yes ? "yes" : p < th.clear_no ? "no" : "not sure" })))));
@@ -631,7 +684,7 @@ function pageImprove() {
     todo("reword any question above about 30% so it has a clearer yes or no answer. The questions live in router.rs (QUESTIONS)."),
     more("See the score distribution per question", h("div", { class: "hist-grid" }, unsureRows.map((r) => h("div", {}, h("div", { style: "font-size:13px;font-weight:600", text: QLABEL[r.q.key] || r.q.key }), histogram(r.vs, [th.clear_no, th.clear_yes]))))));
 
-  const RULES = { "needs clarification": "Unclear, so Haiku asks first", "security-sensitive": "Security work gets Opus", concurrency: "Concurrency work gets Opus", "last answer": "Previous answer failed, go stronger", "trees disagree": "Trees disagreed, one step stronger", "~": "Long chat, keep the model" };
+  const RULES = { "more effort": "More effort (broad reading, care, several tasks)", "not clearly simple": "Not clearly simple, no Haiku", "unsure between": "Unsure request type, harder one", "reasoning depth": "Deep reasoning or at least Sonnet", "specialist": "Specialist domain, stronger model", "you asked": "You asked for a model", "asks for a stronger": "Asked for a stronger model", irreversible: "Irreversible work gets Opus", "needs clarification": "Unclear, a cheap model asks first", "security-sensitive": "Security work gets Opus", concurrency: "Concurrency work gets Opus", "last answer": "Previous answer failed, go stronger", "trees disagree": "Trees disagreed, one step stronger", "~": "Long chat, keep the model" };
   const rule = (w) => { const k = Object.keys(RULES).find((p) => w.startsWith(p)); return k ? RULES[k] : w.split(":")[0]; };
   const fired = countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule);
   const rules = card("Safety rules that changed the choice", `How often each rule overrode the trees' vote, out of ${fmt(n)} messages.`,
@@ -642,8 +695,10 @@ function pageImprove() {
   const trees = card("Trees that are usually outvoted", "How often each tree's vote matched the final choice. A tree that rarely matches has little influence.",
     h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Tree" }), h("th", { class: "r", text: "Matched the choice" }), h("th", { text: "Its usual vote" }))),
       h("tbody", {}, Object.keys(S.meta.forest).map((name) => {
-        const common = [...countBy(ok, (d) => d.trees[name].vote)].sort((a, b) => b[1] - a[1])[0];
-        return h("tr", {}, h("td", { text: name }), h("td", { class: "r", text: pct(ok.filter((d) => d.trees[name].vote === finalOf(d)).length, n) }), h("td", {}, chip(common[0])));
+        const withTrees = ok.filter((d) => d.trees);
+        if (!withTrees.length) return null;
+        const common = [...countBy(withTrees, (d) => d.trees[name].vote)].sort((a, b) => b[1] - a[1])[0];
+        return h("tr", {}, h("td", { text: name }), h("td", { class: "r", text: pct(withTrees.filter((d) => d.trees[name].vote === finalOf(d)).length, withTrees.length) }), h("td", {}, chip(common[0])));
       }))));
 
   const labelled = ok.filter((d) => S.feedback[d.id]);
