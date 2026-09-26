@@ -10,31 +10,31 @@
   --page: #f5f4f1; --surface: #fcfcfb; --border: #e4e2dc; --grid: #ecebe7; --band: #efeeea;
   --text: #0b0b0b; --text-2: #52514e; --muted: #75746e;
   --haiku: #2a78d6; --sonnet: #eb6834; --opus: #1baf7a; --accent: #2a78d6; --baseline: #b4b2a9;
-  --critical: #d03b3b; --good: #0a7d0a; --focus: #2a78d6;
+  --critical: #d03b3b; --good: #0a7d0a; --warning: #b77900; --focus: #2a78d6;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
     --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
     --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
-    --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f;
+    --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #121211; --surface: #1a1a19; --border: #33332f; --grid: #2a2a27; --band: #262624;
   --text: #ffffff; --text-2: #c3c2b7; --muted: #95948c;
-  --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f;
+  --haiku: #3987e5; --sonnet: #d95926; --opus: #199e70; --accent: #3987e5; --baseline: #5f5e5a; --good: #3fbf3f; --critical: #e5534b; --warning: #e0a31a;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: inherit; }
-header { display: flex; align-items: center; gap: 20px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 20px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
 .brand b { font-size: 16px; display: block; }
 .brand span { color: var(--text-2); font-size: 12px; }
-nav { display: flex; gap: 4px; }
-nav a { color: var(--text-2); text-decoration: none; padding: 7px 12px; border-radius: 8px; }
-nav a[aria-current="page"] { color: var(--text); background: var(--band); font-weight: 600; }
+nav { display: flex; gap: 2px; background: var(--band); padding: 3px; border-radius: 10px; }
+nav a { color: var(--text-2); text-decoration: none; padding: 5px 14px; border-radius: 8px; font-size: 13px; }
+nav a[aria-current="page"] { color: var(--text); background: var(--surface); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .spacer { flex: 1; }
 button, select, input { font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
 button { cursor: pointer; }
@@ -44,46 +44,58 @@ button:hover { background: var(--band); }
 .filters label { color: var(--text-2); font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
 .filters .more { display: none; gap: 10px; flex-wrap: wrap; }
 .filters.open .more { display: flex; }
-main { padding: 12px 24px 48px; max-width: 1180px; }
+main { padding: 12px 24px 48px; max-width: 1240px; margin: 0 auto; }
+/* header and filters span the page but align their content to main's centered column */
+header, .filters { padding-left: max(24px, calc((100% - 1240px) / 2 + 24px)); padding-right: max(24px, calc((100% - 1240px) / 2 + 24px)); }
 main.loading { opacity: .6; }
 .stack > * + * { margin-top: 16px; }
 .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; min-width: 0; }
-.card h2 { font-size: 16px; margin: 0 0 4px; font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; min-width: 0; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.card > .legend { margin-bottom: 8px; }
+.grid2 { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.kpis { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpi .l { color: var(--text-2); font-size: 12px; font-weight: 500; }
+.kpi .v { font-size: 30px; font-weight: 650; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi .v.good { color: var(--good); }
+.kpi .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.donut { display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; min-height: 200px; }
+.donut .dl { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.donut .dl li { display: grid; grid-template-columns: 10px 90px 44px 28px; gap: 8px; align-items: center; }
+.donut .dl b { text-align: right; }
+.donut .dl .muted { text-align: right; font-size: 12px; }
+svg text.donut-n { fill: var(--text); font-size: 26px; font-weight: 650; }
+.hbar.rung { grid-template-columns: 120px 1fr 40px; font-size: 13px; margin: 9px 0; }
+.hbar > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar.rung .num { text-align: right; }
+.card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; }
 .card h3 { font-size: 14px; margin: 14px 0 6px; font-weight: 600; }
 .lead { color: var(--text-2); margin: 0 0 14px; font-size: 14px; }
 .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
-.todo { background: var(--band); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text-2); margin-top: 12px; }
-.todo b { color: var(--text); }
-.hero { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.3fr); gap: 28px; align-items: center; }
-.hero .big { font-size: 48px; font-weight: 650; line-height: 1.05; }
-.hero .big.good { color: var(--good); }
-.hero .say { font-size: 16px; margin: 8px 0 0; }
-.cmp { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; font-size: 14px; }
-.cmp .bar { height: 22px; border-radius: 0 4px 4px 0; min-width: 3px; }
-.cmp .val { font-weight: 600; font-variant-numeric: tabular-nums; }
-.split { display: flex; height: 16px; gap: 2px; border-radius: 4px; overflow: hidden; margin: 8px 0 6px; }
-.split span { display: block; min-width: 2px; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
-.models { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.model .n { font-size: 30px; font-weight: 650; line-height: 1.1; margin-top: 6px; }
-.model .desc { color: var(--text-2); font-size: 13px; }
-.model .efforts { color: var(--muted); font-size: 12px; margin-top: 6px; }
-.model .top { height: 4px; margin: -18px -20px 14px; border-radius: 12px 12px 0 0; }
-.steps4 { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); counter-reset: s; }
-.steps4 div { background: var(--band); border-radius: 10px; padding: 12px 14px; font-size: 14px; }
-.steps4 div::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--surface); font-size: 12px; font-weight: 700; margin-bottom: 6px; }
-.steps4 b { display: block; }
 details { margin-top: 12px; }
 summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
 summary:hover { color: var(--text); }
-dl.gloss { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 14px; margin: 10px 0 0; }
-dl.gloss dt { font-weight: 600; }
-dl.gloss dd { margin: 0; color: var(--text-2); }
 .list { list-style: none; margin: 0; padding: 0; }
-.list li { display: grid; grid-template-columns: 96px 1fr auto; gap: 14px; align-items: baseline; padding: 10px 6px; border-bottom: 1px solid var(--grid); cursor: pointer; border-radius: 6px; }
+.list li { display: grid; grid-template-columns: 104px minmax(0, 1fr) 72px 72px; gap: 14px; align-items: center; min-height: 46px; padding: 6px 12px; border-bottom: 1px solid var(--grid); cursor: pointer; border-radius: 8px; border-left: 3px solid var(--fam, var(--border)); margin: 2px 0; }
+.list.compact li { grid-template-columns: 104px minmax(0, 1fr) 72px; }
+.list li.day { display: block; border: 0; cursor: default; padding: 16px 4px 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.list li.day:hover { background: none; }
+.list li.day:first-child { padding-top: 4px; }
+.list li.head { cursor: default; border-left-color: transparent; min-height: 0; padding-top: 4px; padding-bottom: 8px; font-size: 12px; color: var(--muted); }
+.list li.head:hover { background: none; }
+.list li.head > :nth-child(3), .list li.head > :nth-child(4) { justify-self: end; }
+.sort { border: 0; background: none; padding: 2px 4px; margin: 0 -4px; font-size: 12px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; justify-self: start; }
+.sort:hover { background: var(--band); color: var(--text); }
+.sort.on { color: var(--text); font-weight: 600; }
+.sort i { font-style: normal; opacity: .7; }
+.list .when { text-align: right; }
+.mchip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.mchip i { font-style: normal; font-weight: 500; font-size: 11px; color: var(--text-2); background: var(--band); border-radius: 999px; padding: 1px 7px; }
+.list li:last-child { border-bottom: 0; }
+.list .cost { align-items: flex-end; font-size: 13px; display: flex; flex-direction: column; line-height: 1.3; }
+.list .cost .saved { font-size: 11px; }
 .list li:hover { background: var(--band); }
 .list .when { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .list .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -100,24 +112,47 @@ th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 12px; 
 td { border-bottom: 1px solid var(--grid); padding: 8px; vertical-align: top; }
 td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .back { display: inline-block; margin: 4px 0 8px; color: var(--text-2); text-decoration: none; }
-.title { font-size: 20px; font-weight: 650; margin: 0; overflow-wrap: anywhere; }
-.result { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
-.result .picked { font-size: 24px; }
+.title { font-size: 18px; font-weight: 650; margin: 0 0 2px; overflow-wrap: anywhere; }
+.chip.big { font-size: 22px; gap: 8px; }
+.chip.big .sw { width: 12px; height: 12px; }
+.rate-tile { margin-top: 10px; }
+.rate-tile .fb button { width: 38px; height: 38px; padding: 0; border-radius: 50%; font-size: 16px; }
+.quote.clamp { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; }
 .fb { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fb button[aria-pressed="true"] { border-color: var(--text); background: var(--band); font-weight: 600; }
-.rate li { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--grid); }
-.rate .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.list.rate li { grid-template-columns: 60px minmax(0, 1fr) auto auto; cursor: default; }
+.list.rate .when { text-align: left; }
+.rate .msg { cursor: pointer; }
 .rate .msg:hover { text-decoration: underline; }
-.rate .why { color: var(--text-2); font-size: 13px; }
-.rate .fb button { font-size: 13px; padding: 4px 10px; }
-.rate li.done { opacity: .6; }
-@media (max-width: 700px) { .rate li { grid-template-columns: 1fr; } }
-.step-h { display: flex; align-items: center; gap: 10px; }
-.step-h i { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--text); color: var(--surface); font-style: normal; font-size: 12px; font-weight: 700; flex: none; }
+.rate li.done { opacity: .55; }
+.rate .fb { gap: 4px; flex-wrap: nowrap; }
+.rate .fb button { width: 30px; height: 30px; padding: 0; border-radius: 50%; font-size: 14px; }
+.fb button.rb-right[aria-pressed="true"] { border-color: var(--good); color: var(--good); }
+.fb button.rb-too_low[aria-pressed="true"] { border-color: var(--critical); color: var(--critical); }
+.fb button.rb-too_high[aria-pressed="true"] { border-color: var(--warning); color: var(--warning); }
+.grid3 { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid3 .hbar.rung { grid-template-columns: 96px 1fr 40px; }
+.mixwrap { margin-bottom: 8px; }
+.mix, .seg { display: flex; gap: 2px; border-radius: 4px; overflow: hidden; }
+.mix { height: 10px; margin-bottom: 8px; }
+.seg { height: 12px; }
+.mix span, .seg span { display: block; min-width: 2px; }
+.hbar.spend { grid-template-columns: 120px 1fr 56px; font-size: 13px; margin: 10px 0; }
+.hbar.spend .num { text-align: right; }
+.pair { display: grid; gap: 3px; }
+.pair .b { height: 8px; }
+.progress { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin-bottom: 14px; font-size: 13px; }
+.knobs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.knob { background: var(--band); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; font-size: 12px; color: var(--text-2); border: 1px solid transparent; }
+.knob b { color: var(--text); font-size: 15px; }
+.knob.on { border-color: var(--accent); }
 .quote { border-left: 3px solid var(--accent); background: var(--band); padding: 10px 14px; border-radius: 0 8px 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn { border-left: 3px solid var(--border); padding: 4px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .turn span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.noul { display: grid; grid-template-columns: minmax(150px, 260px) 1fr 44px 58px; gap: 10px; align-items: center; margin: 6px 0; font-size: 13px; }
+.noul { display: grid; grid-template-columns: 130px 1fr 36px; gap: 10px; align-items: center; margin: 8px 0; font-size: 13px; }
+.noul .num { text-align: right; }
+.noul > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid2.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .track { position: relative; height: 14px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .track .unsure { position: absolute; top: 0; bottom: 0; background: var(--band); border-left: 1px dashed var(--muted); border-right: 1px dashed var(--muted); }
 .track .fill { position: absolute; left: 0; top: 3px; bottom: 3px; background: var(--accent); border-radius: 0 4px 4px 0; }
@@ -166,17 +201,18 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space:
 svg text { fill: var(--text-2); font-size: 11px; }
 svg .grid-line { stroke: var(--grid); stroke-width: 1; }
 svg .hit { fill: transparent; }
+@media (max-width: 900px) { .grid2, .grid2.even, .grid3 { grid-template-columns: 1fr; } }
 @media (max-width: 700px) {
   header, .filters { padding-left: 16px; padding-right: 16px; } main { padding: 12px 16px 40px; }
-  .hero { grid-template-columns: 1fr; gap: 18px; } .hero .big { font-size: 40px; }
-  .cmp { grid-template-columns: 110px 1fr; } .list li { grid-template-columns: 1fr auto; } .list .when { grid-column: 1 / -1; }
-  .noul { grid-template-columns: 1fr 70px 40px 52px; }
+  .list li, .list.compact li { grid-template-columns: 90px minmax(0, 1fr); } .list .when, .list .cost { display: none; } .list.rate li { grid-template-columns: minmax(0, 1fr) auto; } .list.rate li .chip { display: none; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi .v { font-size: 24px; }
+  .noul { grid-template-columns: 110px 1fr 36px; }
 }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand"><b>jev-router</b><span>picks the right Claude model for each message</span></div>
+  <div class="brand"><b>jev-router</b></div>
   <nav aria-label="Pages">
     <a href="#/summary" data-view="summary">Summary</a>
     <a href="#/messages" data-view="messages">Messages</a>
@@ -232,11 +268,10 @@ function s(tag, attrs, ...kids) {
 
 // --- Plain-language vocabulary ----------------------------------------------------------
 const FAMILIES = [
-  { key: "haiku", label: "Haiku 4.5", color: "var(--haiku)", desc: "Fastest and cheapest. Quick questions, small edits, and asking clarifying questions." },
-  { key: "sonnet", label: "Sonnet 5", color: "var(--sonnet)", desc: "Everyday coding: features, fixes and tests with a clear shape." },
-  { key: "opus", label: "Opus 5.5", color: "var(--opus)", desc: "Hard or risky work: concurrency, security, design, or a fix that already failed." },
+  { key: "haiku", label: "Haiku 4.5", color: "var(--haiku)" },
+  { key: "sonnet", label: "Sonnet 5", color: "var(--sonnet)" },
+  { key: "opus", label: "Opus 5.5", color: "var(--opus)" },
 ];
-const EFFORT = { low: "thinks briefly", medium: "thinks a moderate amount", high: "thinks carefully", xhigh: "thinks very carefully", max: "thinks as long as it needs" };
 const QLABEL = {
   clarified: "The request is clear enough to start",
   trivial: "It's a small, simple change",
@@ -264,7 +299,7 @@ const fam = (rung) => FAMILIES.find((f) => f.key === familyOf(rung)) || { label:
 const effortOf = (rung) => (rung || "").split("/")[1] || null;
 const friendly = (rung) => rung ? `${fam(rung).label}${effortOf(rung) ? ` (${effortOf(rung)} effort)` : ""}` : "none";
 const chip = (rung) => rung
-  ? h("span", { class: "chip" }, h("i", { class: "sw", style: `background:${fam(rung).color}` }), fam(rung).label, effortOf(rung) ? h("span", { class: "eff", text: `· ${effortOf(rung)} effort` }) : null)
+  ? h("span", { class: "chip" }, h("i", { class: "sw", style: `background:${fam(rung).color}` }), fam(rung).label, effortOf(rung) ? h("span", { class: "eff", text: `· ${effortOf(rung)}` }) : null)
   : h("span", { class: "err", text: "⚠ routing failed" });
 
 function reasonSentence(w) {
@@ -287,13 +322,13 @@ function reasonSentence(w) {
 function shortReason(d) {
   if (!d.final) return "couldn't reach Jev; kept the previous model";
   const w = (d.why || []).slice(1).map((x) => x.split(":")[0]).pop() || "";
-  if (d.rules === "v2" && w.startsWith("request type")) return INTENT_LABEL[(d.intent || {}).choice] || "request type";
   if (w.startsWith("needs clarification")) return "unclear, so it asks first";
   if (w.startsWith("more effort")) return "more effort";
   if (w.startsWith("not clearly simple")) return "not clearly simple";
   if (w.startsWith("you asked")) return "you asked for this model";
   if (w.startsWith("asks for a stronger")) return "asked for a stronger model";
   if (w.startsWith("irreversible")) return "irreversible action rule";
+  if (d.rules === "v2" && !w) return INTENT_LABEL[(d.intent || {}).choice] || "request type";
   if (w.startsWith("security")) return "security rule";
   if (w.startsWith("concurrency")) return "concurrency rule";
   if (w.startsWith("last answer")) return "previous answer failed";
@@ -369,13 +404,14 @@ const usageByDecision = () => { const m = new Map(); for (const u of S.usage) if
 
 // --- Tooltip ---------------------------------------------------------------------------------
 const tip = $("tip");
+function showTip(x, y, value, lines) {
+  tip.replaceChildren(h("strong", { text: value }), ...lines.map((l) => h("div", { text: l })));
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  tip.style.left = `${Math.min(x + 14, innerWidth - r.width - 8)}px`; tip.style.top = `${Math.min(y + 14, innerHeight - r.height - 8)}px`;
+}
 function tipTarget(el, value, ...lines) {
-  const show = (x, y) => {
-    tip.replaceChildren(h("strong", { text: value }), ...lines.map((l) => h("div", { text: l })));
-    tip.style.display = "block";
-    const r = tip.getBoundingClientRect();
-    tip.style.left = `${Math.min(x + 14, innerWidth - r.width - 8)}px`; tip.style.top = `${Math.min(y + 14, innerHeight - r.height - 8)}px`;
-  };
+  const show = (x, y) => showTip(x, y, value, lines);
   el.setAttribute("tabindex", "0"); el.setAttribute("aria-label", [value, ...lines].join(", "));
   el.addEventListener("pointermove", (e) => show(e.clientX, e.clientY));
   el.addEventListener("pointerleave", () => { tip.style.display = "none"; });
@@ -388,103 +424,191 @@ function tipTarget(el, value, ...lines) {
 const card = (title, lead, ...body) => h("section", { class: "card" }, title ? h("h2", { text: title }) : null, lead ? h("p", { class: "lead", text: lead }) : null, ...body);
 const more = (label, ...body) => h("details", {}, h("summary", { text: label }), ...body);
 const empty = (msg) => h("div", { class: "card empty", text: msg });
-const todo = (text) => h("div", { class: "todo" }, h("b", { text: "What to do: " }), text);
 const legend = (items) => h("div", { class: "legend" }, items.map((it) => h("span", {}, h("i", { class: "sw", style: `background:${it.color}` }), it.label)));
 const baselineName = () => (S.meta.pricing[$("f-baseline").value] || {}).name || "the baseline";
 
-function heroCard() {
+function kpiRow(ds) {
   const c = costs(filteredUsage(), $("f-baseline").value);
-  const decisions = filteredDecisions().filter(finalOf);
-  const jev = decisions.reduce((a, d) => a + ((d.jev.usage || {}).input_tokens || 0), 0) * S.meta.jev_per_mtok / 1e6;
-  if (!c.priced) {
-    return card("Money saved", null, h("p", { class: "say", text: "No cost data yet." }),
-      h("p", { class: "hint", text: "Cost tracking starts with your next jev-router claude session. The real token counts of each request are recorded as it runs." }));
-  }
-  const withRouter = c.actual + jev, saved = c.without - withRouter, share = c.without ? saved / c.without : 0, max = Math.max(c.without, withRouter);
-  const bar = (label, sub, value, color) => [h("div", {}, h("div", { text: label }), h("div", { class: "muted", style: "font-size:12px", text: sub })),
-    h("div", { style: "display:flex;align-items:center;gap:10px" }, tipTarget(h("div", { class: "bar", style: `width:${Math.max(1, (value / max) * 85)}%;background:${color}` }), money(value), label, sub), h("span", { class: "val", text: money(value) }))];
-  const splits = FAMILIES.filter((f) => c.byFam.get(f.key)).concat(c.byFam.get("manual") ? [{ key: "manual", label: "You picked (/model)", color: "var(--baseline)" }] : []);
-  return h("section", { class: "card" },
-    h("div", { class: "hero" },
-      h("div", {},
-        h("div", { class: "muted", text: saved >= 0 ? "Estimated money saved" : "Estimated extra cost" }),
-        h("div", { class: `big${saved > 0 ? " good" : ""}`, text: money(Math.abs(saved)) }),
-        h("p", { class: "say", text: saved >= 0
-          ? `That's ${Math.round(share * 100)}% less than running every message on ${baselineName()}.`
-          : `Routing cost ${Math.round(-share * 100)}% more than ${baselineName()} for these messages.` })),
-      h("div", {}, h("div", { class: "cmp" },
-        bar("With jev-router", `includes ${money(jev)} for Jev`, withRouter, "var(--accent)"),
-        bar("Without it", `everything on ${baselineName()}`, c.without, "var(--baseline)")))),
-    h("h3", { text: `${compact(c.tokens)} tokens handled, split by model` }),
-    h("div", { class: "split", role: "img", "aria-label": "Share of tokens per model" },
-      splits.map((f) => tipTarget(h("span", { style: `flex:${c.byFam.get(f.key)};background:${f.color}` }), `${pct(c.byFam.get(f.key), c.tokens)} of tokens`, f.label, `${compact(c.byFam.get(f.key))} tokens`))),
-    legend(splits.map((f) => ({ color: f.color, label: `${f.label} ${pct(c.byFam.get(f.key), c.tokens)}` }))),
-    more("How is this calculated?",
-      h("p", { class: "hint", text: `The proxy records the real token counts of each of ${fmt(c.n)} Claude requests: input, output, cache reads and cache writes. "With jev-router" prices them on the model that actually ran, plus the Jev calls. "Without it" prices the same tokens as if every routed request had run on ${baselineName()}. Messages where you picked a model yourself cost the same in both.` }),
-      h("p", { class: "hint", text: "It's an estimate: a different model would have written a different number of tokens, and switching models sometimes costs extra cache writes (those are already counted on the \"with\" side). Prices are Anthropic list prices per token. On a Claude subscription you don't pay per token, so this shows up as more room in your usage limits." })));
+  const jev = ds.filter(finalOf).reduce((a, d) => a + ((d.jev.usage || {}).input_tokens || 0), 0) * S.meta.jev_per_mtok / 1e6;
+  const spent = c.actual + jev, saved = c.without - spent, failed = ds.filter((d) => !finalOf(d)).length;
+  const tile = (label, value, sub, cls) => h("div", { class: "card kpi" }, h("div", { class: "l", text: label }), h("div", { class: `v${cls ? ` ${cls}` : ""}`, text: value }), sub ? h("div", { class: "s", text: sub }) : null);
+  return h("div", { class: "kpis" },
+    tile(saved >= 0 ? "Saved" : "Extra cost", c.priced ? money(Math.abs(saved)) : "–", c.priced && c.without ? `${Math.round((Math.abs(saved) / c.without) * 100)}% vs ${baselineName()}` : "no cost data yet", c.priced && saved > 0 ? "good" : null),
+    tile("Spent", c.priced ? money(spent) : "–", c.priced ? `${money(c.without)} on ${baselineName()}` : null),
+    tile("Messages", fmt(ds.length), failed ? `${fmt(failed)} failed routing` : null),
+    tile("Tokens", compact(c.tokens), `${fmt(c.n)} requests`));
 }
 
-function modelCards() {
-  const ds = filteredDecisions().filter(finalOf), total = ds.length;
-  return h("div", { class: "models" }, FAMILIES.map((f) => {
-    const mine = ds.filter((d) => familyOf(finalOf(d)) === f.key);
-    const efforts = [...countBy(mine, (d) => effortOf(finalOf(d)) || "")].filter(([e]) => e).map(([e, n]) => `${e} ×${n}`).join(" · ");
-    return h("section", { class: "card model" }, h("div", { class: "top", style: `background:${f.color}` }),
-      h("div", { style: "font-weight:600" }, f.label), h("div", { class: "desc", text: f.desc }),
-      h("div", { class: "n", text: `${fmt(mine.length)} message${mine.length === 1 ? "" : "s"}` }),
-      h("div", { class: "muted", text: `${pct(mine.length, total)} of all messages` }),
-      efforts ? h("div", { class: "efforts", text: `effort used: ${efforts}` }) : null);
-  }));
-}
+const shortDate = (ts) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-function howItWorks() {
-  return card("How jev-router decides", "For every new message you send in a jev-router claude session:",
-    h("div", { class: "steps4" },
-      h("div", {}, h("b", { text: "You send a message" }), "It is paused for about a second."),
-      h("div", {}, h("b", { text: "Jev reads it" }), "Jev picks the kind of request (explain, fix, design, chat...), rates how much reasoning and reading it needs, and answers quick yes/no questions such as \"does it involve security?\" One call, a fraction of a cent."),
-      h("div", {}, h("b", { text: "Rules pick a model" }), "The kind of request sets a starting model and effort; deep reasoning moves it to a stronger model, broad reading to more effort. Haiku only when everything says simple. Safety rules can raise it, for example security work always gets Opus."),
-      h("div", {}, h("b", { text: "Claude answers" }), "Claude Code runs the message on that model. Its tool calls stay on the same model until your next message.")),
-    more("What do these words mean?", h("dl", { class: "gloss" },
-      [["Model", "Which Claude answers: Haiku 4.5 (cheapest), Sonnet 5, or Opus 5.5 (strongest)."],
-       ["Effort", "How much the model thinks before answering: low, medium, high, xhigh or max. More effort gives better answers on hard problems, but it is slower and uses more tokens. Haiku has no effort setting."],
-       ["Model + effort options", "The router chooses from 8 options, cheapest first: Haiku 4.5; Sonnet 5 at low, medium or high effort; Opus 5.5 at medium, high, xhigh or max."],
-       ["Jev", "A small, fast model from TypeSafe that answers yes/no questions with a score from 0 (no) to 1 (yes). Between 0.35 and 0.65 counts as \"not sure\"."],
-       ["Request type", "One of 13 kinds, such as explain code, review, plan / design, debug / fix or chat. Each has a starting model + effort option (router.rs, INTENTS)."],
-       ["Decision tree", "Older rules (JEV_ROUTER_RULES=v1): five tiny if/then trees vote and the middle vote wins. Still computed for comparison."],
-       ["Safety rule", "A fixed rule applied after the vote, for example concurrency or security work never goes below Opus 5.5 at medium effort."],
-       ["Tokens", "The units models read and write, roughly ¾ of a word each. You pay per token."]].map(([t, d]) => [h("dt", { text: t }), h("dd", { text: d })]))));
-}
-
-function messageList(ds, limit) {
-  const costsBy = usageByDecision(), bp = $("f-baseline").value;
-  const items = [...ds].reverse().slice(0, limit || ds.length).map((d) => {
-    const rows = costsBy.get(d.id) || [];
-    const c = rows.length ? costs(rows, bp) : null;
-    return h("li", { tabindex: "0", onclick: () => { location.hash = `#/m/${d.id}`; }, onkeydown: (e) => { if (e.key === "Enter") location.hash = `#/m/${d.id}`; } },
-      h("span", { class: "when", text: ago(d.ts), title: new Date(d.ts).toLocaleString() }),
-      h("div", { style: "min-width:0" }, h("div", { class: "msg", text: words(latestOf(d)) || "(empty)", title: latestOf(d) }), h("div", { class: "why", text: `Why: ${shortReason(d)} · ${project(d.cwd)}` })),
-      h("div", { class: "right" }, chip(finalOf(d)),
-        c && c.priced ? h("div", { class: "muted", style: "font-size:13px" }, money(c.actual), c.without - c.actual > 0.00005 ? h("span", { class: "saved", text: `  saved ${money(c.without - c.actual)}` }) : null) : null));
+// Cumulative cost, request by request: with the router vs. everything on the baseline.
+function costChart(recs, bp) {
+  const rows = [...recs].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  let a = 0, w = 0;
+  const pts = rows.map((r) => { const c = costs([r], bp); a += c.actual; w += c.without; return { ts: r.ts, a, w }; });
+  if (pts.length < 2) return h("p", { class: "muted", text: "Not enough cost data yet." });
+  const W = 560, H = 220, m = { t: 12, r: 78, b: 24, l: 48 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const max = Math.max(a, w) || 1, last = pts.length - 1;
+  const x = (i) => m.l + (i / last) * iw, y = (v) => m.t + ih - (v / max) * ih;
+  const line = (k) => pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[k]).toFixed(1)}`).join("");
+  const between = line("w") + pts.map((p, i) => `L${x(last - i).toFixed(1)},${y(pts[last - i].a).toFixed(1)}`).join("") + "Z";
+  const root = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": `Cumulative cost: ${money(a)} with jev-router, ${money(w)} on ${baselineName()}` });
+  for (const t of [0, 0.5, 1]) root.append(s("line", { class: "grid-line", x1: m.l, x2: m.l + iw, y1: y(max * t), y2: y(max * t) }), s("text", { x: m.l - 8, y: y(max * t) + 4, "text-anchor": "end" }, t ? money(max * t) : "$0"));
+  const oneDay = shortDate(pts[0].ts) === shortDate(pts[last].ts);
+  const tick = (ts) => oneDay ? new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : shortDate(ts);
+  const yw = y(w), ya = Math.max(y(a), yw + 14);
+  root.append(s("path", { d: between, fill: "var(--good)", "fill-opacity": ".1" }),
+    s("path", { d: line("w"), fill: "none", stroke: "var(--baseline)", "stroke-width": 2, "stroke-linejoin": "round" }),
+    s("path", { d: line("a"), fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round" }),
+    s("text", { x: m.l + iw + 8, y: yw + 4 }, "without"), s("text", { x: m.l + iw + 8, y: ya + 4 }, "with router"),
+    s("text", { x: m.l, y: H - 4 }, tick(pts[0].ts)), s("text", { x: m.l + iw, y: H - 4, "text-anchor": "end" }, tick(pts[last].ts)));
+  const hidden = { visibility: "hidden" };
+  const cross = s("line", { y1: m.t, y2: m.t + ih, stroke: "var(--muted)", "stroke-dasharray": "3 3", ...hidden });
+  const dot = (color) => s("circle", { r: 4, fill: color, stroke: "var(--surface)", "stroke-width": 2, ...hidden });
+  const dA = dot("var(--accent)"), dW = dot("var(--baseline)"), hover = [cross, dA, dW];
+  const hit = s("rect", { class: "hit", x: m.l, y: m.t, width: iw, height: ih });
+  hit.addEventListener("pointermove", (e) => {
+    const b = root.getBoundingClientRect(), px = ((e.clientX - b.left) * W) / b.width;
+    const i = Math.max(0, Math.min(last, Math.round(((px - m.l) / iw) * last))), p = pts[i];
+    for (const el of hover) el.setAttribute("visibility", "visible");
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+    dA.setAttribute("cx", x(i)); dA.setAttribute("cy", y(p.a)); dW.setAttribute("cx", x(i)); dW.setAttribute("cy", y(p.w));
+    showTip(e.clientX, e.clientY, `saved ${money(p.w - p.a)}`, [`with router ${money(p.a)}`, `on ${baselineName()} ${money(p.w)}`, new Date(p.ts).toLocaleString()]);
   });
-  return h("ul", { class: "list" }, items);
+  hit.addEventListener("pointerleave", () => { for (const el of hover) el.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  root.append(...hover, hit);
+  return root;
+}
+
+function modelDonut(ds) {
+  const ok = ds.filter(finalOf), n = ok.length;
+  const counts = FAMILIES.map((f) => ({ f, c: ok.filter((d) => familyOf(finalOf(d)) === f.key).length }));
+  const R = 52, gap = counts.filter((x) => x.c).length > 1 ? 1.5 : 0;
+  const root = s("svg", { viewBox: "0 0 140 140", width: 150, height: 150, role: "img", "aria-label": counts.map(({ f, c }) => `${f.label} ${c}`).join(", ") },
+    s("circle", { cx: 70, cy: 70, r: R, fill: "none", stroke: "var(--grid)", "stroke-width": 16 }));
+  let off = 0;
+  for (const { f, c } of counts) {
+    if (!c) continue;
+    const len = (c / n) * 100;
+    root.append(tipTarget(s("circle", { cx: 70, cy: 70, r: R, fill: "none", stroke: f.color, "stroke-width": 16, pathLength: 100,
+      "stroke-dasharray": `${Math.max(0.1, len - gap)} ${100 - len + gap}`, "stroke-dashoffset": -off, transform: "rotate(-90 70 70)" }), `${fmt(c)} messages`, f.label, pct(c, n)));
+    off += len;
+  }
+  root.append(s("text", { x: 70, y: 74, "text-anchor": "middle", class: "donut-n" }, fmt(n)), s("text", { x: 70, y: 92, "text-anchor": "middle" }, "messages"));
+  return h("div", { class: "donut" }, root, h("ul", { class: "dl" }, counts.map(({ f, c }) =>
+    h("li", {}, h("i", { class: "sw", style: `background:${f.color}` }), h("span", { text: f.label }), h("b", { class: "num", text: pct(c, n) }), h("span", { class: "muted num", text: fmt(c) })))));
+}
+
+// Messages per day, stacked by model family. Last 14 days that have messages.
+function dailyChart(ds) {
+  const ok = ds.filter(finalOf), key = (ts) => new Date(ts).toLocaleDateString("en-CA");
+  const days = [...countBy(ok, (d) => key(d.ts)).keys()].sort().slice(-14);
+  if (!days.length) return h("p", { class: "muted", text: "No messages match the filters." });
+  const W = 560, H = 200, m = { t: 12, r: 8, b: 24, l: 32 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const per = days.map((k) => FAMILIES.map((f) => ({ f, c: ok.filter((d) => key(d.ts) === k && familyOf(finalOf(d)) === f.key).length })).filter((x) => x.c));
+  const max = Math.max(1, ...per.map((r) => r.reduce((a, x) => a + x.c, 0)));
+  const slot = iw / days.length, bw = Math.min(40, slot * 0.6), y = (v) => m.t + ih - (v / max) * ih, step = Math.ceil(days.length / 7);
+  const root = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Messages per day by model" });
+  for (const v of [...new Set([0, Math.round(max / 2), max])]) root.append(s("line", { class: "grid-line", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }), s("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }, v));
+  days.forEach((k, i) => {
+    const x0 = m.l + slot * i + (slot - bw) / 2, label = shortDate(`${k}T12:00`);
+    let base = y(0);
+    per[i].forEach(({ f, c }, j) => {
+      const top = base - (c / max) * ih, bottom = base - (j ? 2 : 0), r = j === per[i].length - 1 ? Math.min(4, bottom - top) : 0;
+      root.append(tipTarget(s("path", { d: `M${x0},${bottom}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + bw - r}Q${x0 + bw},${top} ${x0 + bw},${top + r}V${bottom}Z`, fill: f.color }), `${fmt(c)} message${c === 1 ? "" : "s"}`, f.label, label));
+      base = top;
+    });
+    if (i % step === 0) root.append(s("text", { x: x0 + bw / 2, y: H - 4, "text-anchor": "middle" }, label));
+  });
+  return root;
+}
+
+function rungBars(ds) {
+  const c = countBy(ds.filter(finalOf), finalOf), max = Math.max(1, ...c.values());
+  return h("div", {}, S.meta.ladder.map((l) => l.name).filter((r) => c.get(r)).map((r) => h("div", { class: "hbar rung" },
+    h("span", { text: shortRung(r) }), h("div", {}, h("div", { class: "b", style: `width:${(c.get(r) / max) * 100}%;background:${fam(r).color}` })), h("span", { class: "num", text: fmt(c.get(r)) }))));
+}
+
+const clip = (t, n) => { const w = words(t); return w.length > n ? `${w.slice(0, n).trimEnd()}…` : w || "(empty)"; };
+const EFF_SHORT = { low: "low", medium: "med", high: "high", xhigh: "xhigh", max: "max" };
+const miniChip = (rung) => rung
+  ? h("span", { class: "mchip" }, fam(rung).label.split(" ")[0], effortOf(rung) ? h("i", { text: EFF_SHORT[effortOf(rung)] || effortOf(rung) }) : null)
+  : h("span", { class: "err", text: "failed" });
+const dayLabel = (ts) => { const d = new Date(ts), t = new Date(); t.setHours(0, 0, 0, 0); const diff = Math.round((t - new Date(d).setHours(0, 0, 0, 0)) / 864e5); return diff === 0 ? "Today" : diff === 1 ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); };
+
+// Messages page sort: newest first by default. Day headings only make sense when sorted by time.
+const msgSort = { key: "time", dir: -1 };
+function messageList(ds, limit, compact) {
+  const costsBy = usageByDecision(), bp = $("f-baseline").value, items = [];
+  const rungIndex = (d) => S.meta.ladder.findIndex((l) => l.name === finalOf(d));
+  let rows = [...ds].reverse().map((d) => {
+    const u = costsBy.get(d.id) || [], c = u.length ? costs(u, bp) : null;
+    return { d, c: c && c.priced ? c : null };
+  });
+  if (!compact) {
+    const key = { time: (r) => new Date(r.d.ts).getTime(), model: (r) => rungIndex(r.d), cost: (r) => (r.c ? r.c.actual : null) }[msgSort.key];
+    // Stable sort, so ties stay newest first; rows without cost data always go last.
+    rows.sort((a, b) => { const ka = key(a), kb = key(b); return ka === null ? (kb === null ? 0 : 1) : kb === null ? -1 : (ka - kb) * msgSort.dir; });
+  }
+  rows = rows.slice(0, limit || rows.length);
+  const byTime = compact || msgSort.key === "time", clock = { hour: "numeric", minute: "2-digit" };
+  if (!compact) {
+    const head = (key, label) => {
+      const on = msgSort.key === key;
+      return h("button", { type: "button", class: `sort${on ? " on" : ""}`, "aria-sort": on ? (msgSort.dir < 0 ? "descending" : "ascending") : "none",
+        onclick: (e) => { e.stopPropagation(); if (on) msgSort.dir = -msgSort.dir; else Object.assign(msgSort, { key, dir: -1 }); render(); } }, label, h("i", { text: on ? (msgSort.dir < 0 ? "↓" : "↑") : "↕" }));
+    };
+    items.push(h("li", { class: "head" }, head("model", "Model"), h("span", { text: "Message" }), head("time", "Time"), head("cost", "Cost")));
+  }
+  let day = null;
+  for (const { d, c } of rows) {
+    if (!compact && byTime && dayLabel(d.ts) !== day) { day = dayLabel(d.ts); items.push(h("li", { class: "day", text: day })); }
+    const saved = c ? c.without - c.actual : 0, open = () => { location.hash = `#/m/${d.id}`; };
+    const when = compact ? ago(d.ts) : byTime || dayLabel(d.ts) === "Today" ? new Date(d.ts).toLocaleTimeString(undefined, clock) : `${shortDate(d.ts)} ${new Date(d.ts).toLocaleTimeString(undefined, clock)}`;
+    items.push(h("li", { tabindex: "0", style: `--fam:${fam(finalOf(d)).color}`, title: `${words(latestOf(d))}\nWhy: ${shortReason(d)} · ${project(d.cwd)}`, onclick: open, onkeydown: (e) => { if (e.key === "Enter") open(); } },
+      miniChip(finalOf(d)),
+      h("div", { class: "msg", text: words(latestOf(d)) || "(empty)" }),
+      h("span", { class: "when", text: when }),
+      compact ? null : h("div", { class: "cost num" }, c ? money(c.actual) : "", saved > 0.00005 ? h("span", { class: "saved", text: `−${money(saved)}` }) : null)));
+  }
+  return h("ul", { class: `list${compact ? " compact" : ""}` }, items);
+}
+
+// One thin 100% bar: share of messages per model family.
+function mixBar(ds) {
+  const ok = ds.filter(finalOf), n = ok.length;
+  const parts = FAMILIES.map((f) => ({ f, c: ok.filter((d) => familyOf(finalOf(d)) === f.key).length })).filter((x) => x.c);
+  return h("div", { class: "mixwrap" },
+    h("div", { class: "mix", role: "img", "aria-label": parts.map(({ f, c }) => `${f.label} ${pct(c, n)}`).join(", ") },
+      parts.map(({ f, c }) => tipTarget(h("span", { style: `flex:${c};background:${f.color}` }), `${fmt(c)} messages`, f.label, pct(c, n)))),
+    legend(parts.map(({ f, c }) => ({ color: f.color, label: `${f.label} ${pct(c, n)}` }))));
 }
 
 // --- Pages -------------------------------------------------------------------------------------
 function pageSummary() {
   const ds = filteredDecisions();
   if (!S.decisions.length) return [empty("Nothing here yet. Start Claude Code with `jev-router claude` and send a message.")];
-  return [heroCard(), modelCards(), howItWorks(),
-    card("Recent messages", "Click one to see how its model was chosen.", ds.length ? messageList(ds, 6) : h("p", { class: "muted", text: "No messages match the filters." }),
+  const bp = $("f-baseline").value;
+  return [kpiRow(ds),
+    h("div", { class: "grid2" },
+      card("Cost over time", null, legend([{ color: "var(--accent)", label: "With jev-router" }, { color: "var(--baseline)", label: `All on ${baselineName()}` }]), costChart(filteredUsage(), bp)),
+      card("Models", null, modelDonut(ds))),
+    h("div", { class: "grid2" },
+      card("Messages per day", null, legend(FAMILIES), dailyChart(ds)),
+      card("Model + effort", null, rungBars(ds))),
+    card("Recent", null, ds.length ? messageList(ds, 5, true) : h("p", { class: "muted", text: "No messages match the filters." }),
       h("p", { class: "hint" }, h("a", { href: "#/messages", text: `All ${fmt(ds.length)} messages →` })))];
 }
 
 function pageMessages() {
   const ds = filteredDecisions();
   if (!ds.length) return [empty("No messages match these filters.")];
-  return [card(`${fmt(ds.length)} messages`, "Newest first. For each one: the model it went to, why, and what it cost (once cost tracking has data).", messageList(ds))];
+  return [h("section", { class: "card" }, h("h2", { text: `${fmt(ds.length)} messages` }), mixBar(ds), messageList(ds))];
 }
 
-const RAIL = [["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
+const RAIL = [["unsure between", "unsure type, harder one"], ["reasoning depth", "deep reasoning"], ["specialist", "specialist domain"], ["more effort", "more effort"],
+  ["asks for tests", "tests, more effort"], ["not clearly simple", "not clearly simple, no Haiku"], ["you asked", "you asked for it"], ["asks for a stronger", "asked for stronger"],
+  ["irreversible", "irreversible rule"], ["needs clarification: cap -> sonnet", "unclear, Sonnet asks"], ["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
   ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["context tokens", "long chat, no downgrade"]];
 const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design" };
 const shortRung = (r) => `${fam(r).label}${effortOf(r) ? ` · ${effortOf(r)}` : ""}`;
@@ -527,15 +651,16 @@ function decisionFlow(d) {
 }
 
 // v2: request type + reasoning depth + reading breadth -> starting option -> rules -> final.
+// Same figure parts as the tree view: three lit cards, one stem, a pill, rule rails, the final.
 function decisionFlowV2(d) {
   const st = d.jev.structured || {}, i = d.intent || {};
   const start = ((d.why[0] || "").match(/start at (\S+)$/) || [])[1];
+  const level = (k) => { const x = (st[k] || {}).score; return Number.isFinite(x) ? `${x.toFixed(1)} of 3` : "–"; };
   const box = (title, rows) => h("div", { class: "fcell on" }, h("div", { class: "tcard on" }, h("b", { text: title }),
     rows.map(([k, v]) => h("div", { class: "tq" }, h("span", { text: k }), h("span", { class: "a yes", text: v })))));
-  const level = (k) => { const x = (st[k] || {}).score; return Number.isFinite(x) ? `${x.toFixed(1)} of 3` : "–"; };
   const rails = (d.why || []).slice(1).map((w) => {
-    const to = [...w.matchAll(/-> ([a-z0-9.\-]+(?:\/[a-z]+)?)/g)].pop();
-    return [h("div", { class: "stem on" }), h("div", { class: "rail", title: reasonSentence(w) }, h("span", { text: w.split(":")[0] }), to ? h("b", { text: `→ ${shortRung(to[1])}` }) : null)];
+    const label = (RAIL.find(([k]) => w.startsWith(k)) || [null, w.split(":")[0]])[1], to = [...w.matchAll(/-> ([a-z0-9.\-]+(?:\/[a-z]+)?)/g)].pop();
+    return [h("div", { class: "stem on" }), h("div", { class: "rail", title: reasonSentence(w) }, h("span", { text: label }), to ? h("b", { text: `→ ${shortRung(to[1])}` }) : null)];
   });
   const rung = finalOf(d);
   return h("div", { class: "flow", role: "img", "aria-label": (d.why || []).map(reasonSentence).join(" ") },
@@ -544,8 +669,7 @@ function decisionFlowV2(d) {
         box("Request type", [[INTENT_LABEL[i.choice] || i.choice || "?", (i.confidence ?? 0).toFixed(2)], ["runner-up", INTENT_LABEL[i.runner_up] || i.runner_up || "–"]]),
         box("Reasoning", [["depth", level("depth")]]),
         box("Reading", [["breadth", level("breadth")]])),
-      h("div", { class: "stem on" }),
-      start ? h("span", { class: "pill on" }, h("i", { class: "sw", style: `background:${fam(start).color}` }), `starts at ${shortRung(start)}`) : null,
+      start ? [h("span", { class: "pill on" }, h("i", { class: "sw", style: `background:${fam(start).color}` }), `starts at ${shortRung(start)}`)] : null,
       rails,
       h("div", { class: "stem on" }),
       h("div", { class: "final-box", style: `background:${fam(rung).color}` }, fam(rung).label, h("span", { text: effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting" }))));
@@ -555,55 +679,46 @@ const INTENT_LABEL = { chat: "chat", general_knowledge: "general question", off_
   review_audit: "review / audit", plan_design: "plan / design", debug_fix: "debug / fix", implement: "implement", refactor_migrate: "refactor / migrate",
   ops_config: "ops / config", write_text: "writing", other: "other" };
 
-const RATINGS = [["right", "✓ Right"], ["too_low", "↑ Needed a stronger one"], ["too_high", "↓ A cheaper one would do"]];
+const RATINGS = [["right", "✓", "Right"], ["too_low", "↑", "Needed a stronger one"], ["too_high", "↓", "A cheaper one would do"]];
 // Three buttons; clicking the active one again clears the rating.
-const rateButtons = (id) => h("div", { class: "fb", role: "group", "aria-label": "Was this the right model?" },
-  RATINGS.map(([k, t]) => h("button", { type: "button", "aria-pressed": String(S.feedback[id] === k), onclick: (e) => { e.stopPropagation(); sendFeedback(id, S.feedback[id] === k ? "clear" : k); }, text: t })));
+const rateButtons = (id, iconOnly) => h("div", { class: "fb", role: "group", "aria-label": "Was this the right model?" },
+  RATINGS.map(([k, icon, label]) => h("button", { type: "button", class: `rb-${k}`, title: label, "aria-label": label, "aria-pressed": String(S.feedback[id] === k), onclick: (e) => { e.stopPropagation(); sendFeedback(id, S.feedback[id] === k ? "clear" : k); }, text: iconOnly ? icon : `${icon} ${label}` })));
 
 let rateShowAll = false;
 function rateCard(ok) {
-  const unrated = [...ok].reverse().filter((d) => !S.feedback[d.id]);
-  const rated = [...ok].reverse().filter((d) => S.feedback[d.id]);
-  const rows = (rateShowAll ? [...unrated, ...rated] : unrated.slice(0, 8)).map((d) => h("li", { class: S.feedback[d.id] ? "done" : null },
-    h("div", { style: "min-width:0" },
-      h("div", { class: "msg", text: words(latestOf(d)) || "(empty)", title: "Open this message", onclick: () => { location.hash = `#/m/${d.id}`; } }),
-      h("div", { class: "why" }, chip(finalOf(d)), `  ·  why: ${shortReason(d)}  ·  ${ago(d.ts)}`)),
-    rateButtons(d.id)));
-  const hidden = rateShowAll ? 0 : unrated.length - Math.min(8, unrated.length) + rated.length;
-  return card("Rate the router's choices", `Was each message sent to the right model? ${fmt(unrated.length)} not rated yet. Your ratings show which rules to change, in "Your feedback" below.`,
-    rows.length ? h("ul", { class: "list rate" }, rows) : h("p", { class: "muted", text: "Every message here is rated. Nice." }),
-    hidden || rateShowAll ? h("p", { class: "hint" }, h("button", { type: "button", onclick: () => { rateShowAll = !rateShowAll; render(); }, text: rateShowAll ? "Show only unrated" : `Show all ${fmt(unrated.length + rated.length)} messages` })) : null,
-    h("p", { class: "hint", text: "↑ means the model was too weak for the task. ↓ means a cheaper model would have done it just as well. You can also rate from any message's page." }));
+  const all = [...ok].reverse(), unrated = all.filter((d) => !S.feedback[d.id]);
+  const rows = (rateShowAll ? all : unrated.slice(0, 6)).map((d) => h("li", { class: S.feedback[d.id] ? "done" : null, style: `--fam:${fam(finalOf(d)).color}`, title: `${words(latestOf(d))}\nWhy: ${shortReason(d)}` },
+    h("span", { class: "when", text: ago(d.ts) }),
+    h("div", { class: "msg", text: words(latestOf(d)) || "(empty)", onclick: () => { location.hash = `#/m/${d.id}`; } }),
+    miniChip(finalOf(d)), rateButtons(d.id, true)));
+  return card(`Rate choices · ${fmt(unrated.length)} left`, null,
+    rows.length ? h("ul", { class: "list rate" }, rows) : h("p", { class: "muted", text: "All rated." }),
+    all.length > rows.length || rateShowAll ? h("p", { class: "hint" }, h("button", { type: "button", onclick: () => { rateShowAll = !rateShowAll; render(); }, text: rateShowAll ? "Only unrated" : `Show all ${fmt(all.length)}` })) : null);
 }
 
 function knobs(t) {
   const same = (k) => JSON.stringify(t[k]) === JSON.stringify(S.tuning.default[k]);
   return [
-    ["borderline", "“Not sure” range", `scores ${(0.5 - t.borderline).toFixed(2)}–${(0.5 + t.borderline).toFixed(2)}`],
-    ["disagree_spread", "Trees disagree, go one step stronger", `when the votes are ${t.disagree_spread} or more options apart`],
-    ["clarify_cap_below", "Unclear, so Haiku asks first", t.clarify_cap_below == null ? "switched off" : `when “the request is clear” scores below ${t.clarify_cap_below.toFixed(2)}`],
-    ["offset", "Overall nudge", t.offset === 0 ? "none" : t.offset > 0 ? "one option stronger" : "one option cheaper"],
+    ["borderline", "Not sure", `${(0.5 - t.borderline).toFixed(2)}–${(0.5 + t.borderline).toFixed(2)}`],
+    ["disagree_spread", "Step up if spread", `≥ ${t.disagree_spread}`],
+    ["clarify_cap_below", "Ask first if clear", t.clarify_cap_below == null ? "off" : `< ${t.clarify_cap_below.toFixed(2)}`],
+    ["offset", "Nudge", t.offset === 0 ? "0" : t.offset > 0 ? "+1" : "−1"],
   ].map(([k, name, value]) => ({ name, value, isDefault: same(k) }));
 }
 
 function tuningCard() {
   const t = S.tuning;
   if (!t) return null;
-  const adjusted = knobs(t.current).some((k) => !k.isDefault);
-  const waiting = t.rated < t.min_ratings;
+  const k = knobs(t.current), adjusted = k.some((x) => !x.isDefault), waiting = t.rated < t.min_ratings;
   const nextAt = Math.max(t.min_ratings, (t.rated_at_last_run ?? 0) + t.retune_every);
-  const history = [...t.history].reverse().slice(0, 5);
-  return card("Automatic tuning", "The router quietly improves itself from your ratings. You don't have to do anything.",
-    waiting
-      ? [h("div", { class: "hbar", style: "grid-template-columns:1fr 90px" }, h("div", { class: "track" }, h("span", { class: "fill", style: `width:${(t.rated / t.min_ratings) * 100}%` })), h("span", { class: "num", text: `${t.rated} of ${t.min_ratings} ratings` })),
-         h("p", { class: "hint", text: `After ${t.min_ratings} ratings it starts adjusting itself. It checks again after every ${t.retune_every} new ratings.` })]
-      : h("p", { class: "hint", text: `${t.rated} ratings so far. Next check after ${Math.max(0, nextAt - t.rated)} more.` }),
-    h("h3", { text: adjusted ? "Current settings (adjusted from your ratings)" : "Current settings (defaults)" }),
-    h("table", {}, h("tbody", {}, knobs(t.current).map((k) => h("tr", {}, h("td", { text: k.name }), h("td", { text: k.value }), h("td", { class: "muted", text: k.isDefault ? "default" : "adjusted" }))))),
-    history.length ? [h("h3", { text: "History" }), h("ul", { class: "reasons" }, history.map((r) => h("li", {}, h("span", { class: "muted", text: `${ago(r.ts)}: ` }), r.changed ? h("b", { text: "Changed. " }) : null, r.reason)))] : null,
-    adjusted ? h("p", {}, h("button", { type: "button", onclick: async () => { await fetch("/api/tuning/reset", { method: "POST" }); load(); }, text: "Reset to defaults" })) : null,
-    more("How does it decide?",
-      h("p", { class: "hint", text: `It replays every rated message with its saved Jev answers (free, no new Jev calls) under a few hundred small variations of the settings above. A variation is applied only if it satisfies at least ${t.min_gain} more of your ratings and changes none of the messages you marked “Right”. The safety rules (security, concurrency, a previous answer that failed) are never changed. Messages whose Jev questions have since been reworded are left out.` })));
+  const done = waiting ? t.rated / t.min_ratings : 1 - Math.max(0, nextAt - t.rated) / t.retune_every;
+  return card("Auto-tuning", null,
+    h("div", { class: "progress", title: waiting ? `Starts after ${t.min_ratings} ratings` : `Re-checks every ${t.retune_every} ratings` },
+      h("div", { class: "track" }, h("span", { class: "fill", style: `width:${Math.min(1, done) * 100}%` })),
+      h("span", { class: "num", text: waiting ? `${t.rated}/${t.min_ratings}` : `next in ${Math.max(0, nextAt - t.rated)}` })),
+    h("div", { class: "knobs" }, k.map((x) => h("div", { class: `knob${x.isDefault ? "" : " on"}`, title: x.isDefault ? "default" : "adjusted from your ratings" }, h("span", { text: x.name }), h("b", { class: "num", text: x.value })))),
+    t.history.length ? h("ul", { class: "reasons hint" }, [...t.history].reverse().slice(0, 3).map((r) => h("li", { title: r.reason }, `${ago(r.ts)}: ${r.changed ? "changed" : "no change"}`))) : null,
+    adjusted ? h("p", {}, h("button", { type: "button", onclick: async () => { await fetch("/api/tuning/reset", { method: "POST" }); load(); }, text: "Reset to defaults" })) : null);
 }
 
 async function sendFeedback(id, label) {
@@ -621,106 +736,107 @@ function pageMessage(id) {
   if (!d) return [back, empty(`No message ${id}.`)];
   const rung = finalOf(d), th = S.meta.thresholds, state = d.jev.state || {};
   const text = words(latestOf(d));
-  const head = h("div", {}, back, h("p", { class: "title", text: text.slice(0, 140) + (text.length > 140 ? "…" : "") }),
-    h("div", { class: "muted", text: `${new Date(d.ts).toLocaleString()} · ${project(d.cwd)}` }));
-  const asked = card(null, null, h("div", { class: "step-h" }, h("i", { text: "1" }), h("h2", { text: "What you asked" })),
-    h("p", { class: "lead", text: "Exactly what Jev saw, after secrets were redacted and long text was shortened." }),
-    h("div", { class: "quote", text: latestOf(d) }),
-    (state.history || []).length ? more(`Earlier conversation Jev also saw (${state.history.length} turns)`, state.history.map((t) => h("div", { class: "turn" }, h("span", { text: t.role }), t.text))) : null);
-  if (!rung) return [head, card("Routing failed", "Jev couldn't be reached, so this message kept the previous model (or Sonnet 5 at medium effort if it was the first).", h("p", { class: "err", text: `⚠ ${d.error}` })), asked];
+  const head = h("div", {}, back, h("p", { class: "title", text: clip(text, 80), title: text }),
+    h("div", { class: "muted", style: "font-size:13px", text: `${new Date(d.ts).toLocaleString()} · ${project(d.cwd)}` }));
+  const asked = card("Prompt", null, h("div", { class: "quote clamp", text: latestOf(d) }),
+    (state.history || []).length ? more(`${state.history.length} earlier turns`, state.history.map((t) => h("div", { class: "turn" }, h("span", { text: t.role }), t.text))) : null);
+  if (!rung) return [head, card("Routing failed", "Jev couldn't be reached; the previous model was kept.", h("p", { class: "err", text: `⚠ ${d.error}` })), asked];
 
-  const c = costs(usageByDecision().get(id) || [], $("f-baseline").value), fb = S.feedback[id];
-  const result = h("section", { class: "card" }, h("div", { class: "result" },
-    h("div", {}, h("div", { class: "muted", text: "Sent to" }), h("div", { class: "picked" }, chip(rung)),
-      h("div", { class: "muted", text: effortOf(rung) ? `The model ${EFFORT[effortOf(rung)] || ""} before answering.` : "Haiku has no effort setting." })),
-    c.priced ? h("div", {}, h("div", { class: "muted", text: "This message cost" }), h("div", { style: "font-size:20px;font-weight:650", text: money(c.actual) }),
-      h("div", { class: "muted", text: `${compact(c.tokens)} tokens over ${c.n} request${c.n === 1 ? "" : "s"} · ${money(c.without)} on ${baselineName()}` })) : h("div", { class: "muted", style: "max-width:260px", text: "No cost data for this message. Cost tracking started after it ran." }),
-    h("span", { class: "spacer" }),
-    h("div", {}, h("div", { class: "muted", style: "margin-bottom:6px", text: "Was this the right model?" }), rateButtons(id))));
+  const c = costs(usageByDecision().get(id) || [], $("f-baseline").value), u = d.jev.usage || {};
+  const tile = (label, value, sub) => h("div", { class: "card kpi" }, h("div", { class: "l", text: label }), h("div", { class: "v" }, value), sub ? h("div", { class: "s", text: sub }) : null);
+  const kpis = h("div", { class: "kpis" },
+    tile("Model", h("span", { class: "chip big" }, h("i", { class: "sw", style: `background:${fam(rung).color}` }), fam(rung).label), effortOf(rung) ? `${effortOf(rung)} effort` : "no effort setting"),
+    tile("Cost", c.priced ? money(c.actual) : "–", c.priced ? `${money(c.without)} on ${baselineName()}` : "no cost data"),
+    tile("Tokens", c.priced ? compact(c.tokens) : "–", c.priced ? `${c.n} request${c.n === 1 ? "" : "s"}` : null),
+    h("div", { class: "card kpi" }, h("div", { class: "l", text: "Right model?" }), h("div", { class: "rate-tile" }, rateButtons(id, true))));
 
-  const answers = d.jev.answers, entries = Object.entries(answers);
-  const chosen = card(null, null, h("div", { class: "step-h" }, h("i", { text: "2" }), h("h2", { text: "How it decided" })),
-    decisionFlow(d),
-    more(`All ${entries.length} Jev yes/no answers`, h("p", { class: "hint", text: `0 = no, 1 = yes. The shaded middle (${th.clear_no.toFixed(2)}–${th.clear_yes.toFixed(2)}) counts as "not sure".` }),
-      entries.map(([k, p]) => h("div", { class: "noul" }, h("span", { text: QLABEL[k] || k }),
-        h("div", { class: "track" }, h("span", { class: "unsure", style: `left:${th.clear_no * 100}%;width:${(th.clear_yes - th.clear_no) * 100}%` }), h("span", { class: "fill", style: `width:${Math.max(1, p * 100)}%` })),
-        h("span", { class: "num", text: p.toFixed(2) }), h("span", { class: "muted", text: p > th.clear_yes ? "yes" : p < th.clear_no ? "no" : "not sure" })))));
+  // Jev's 9 answers, strongest yes first. Bar color = verdict; the shaded band is "not sure".
+  const answers = Object.entries(d.jev.answers).sort((a, b) => b[1] - a[1]);
+  const verdict = (p) => p > th.clear_yes ? ["yes", "var(--accent)"] : p < th.clear_no ? ["no", "var(--baseline)"] : ["unsure", "var(--warning)"];
+  const jev = card("Jev answers", null,
+    legend([{ color: "var(--accent)", label: "yes" }, { color: "var(--warning)", label: "unsure" }, { color: "var(--baseline)", label: "no" }]),
+    answers.map(([k, p]) => { const [v, color] = verdict(p); return h("div", { class: "noul" }, h("span", { text: QSHORT[k] || k, title: QLABEL[k] || k }),
+      tipTarget(h("div", { class: "track" }, h("span", { class: "unsure", style: `left:${th.clear_no * 100}%;width:${(th.clear_yes - th.clear_no) * 100}%` }), h("span", { class: "fill", style: `width:${Math.max(1, p * 100)}%;background:${color}` })), `${p.toFixed(2)} · ${v}`, QLABEL[k] || k),
+      h("span", { class: "num", text: p.toFixed(2) })); }));
 
-  const f = d.facts || {}, u = d.jev.usage || {};
+  const f = d.facts || {};
   const tech = card(null, null, more("Technical details", h("dl", { class: "kv", style: "margin-top:10px" },
     [["decision id", d.id], ["model id", `${d.final.model} (effort ${d.final.effort || "none"})`], ["previous model", f.previous_rung ? friendly(f.previous_rung) : "none (first message)"], ["conversation size", `~${fmt(f.context_tokens || 0)} tokens`],
      ["Jev", `${d.jev.model}, ${fmt(d.jev.latency_ms)} ms, ${fmt(u.input_tokens || 0)} tokens, request ${d.jev.request_id || "–"}`], ["session", d.session_id || "–"], ["source", d.source], ["folder", d.cwd]]
       .map(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]))));
-  return [head, result, asked, chosen, tech];
+  return [head, kpis, h("div", { class: "grid2 even" }, asked, jev), card("How it decided", null, decisionFlow(d)), tech];
 }
 
-function histogram(values, band) {
-  const W = 240, H = 100, m = { t: 6, r: 6, b: 18, l: 24 }, bins = new Array(10).fill(0);
-  for (const v of values) bins[Math.min(9, Math.floor(v * 10))]++;
-  const max = Math.max(1, ...bins), iw = W - m.l - m.r, ih = H - m.t - m.b, bw = iw / 10, x = (v) => m.l + v * iw, y = (v) => m.t + ih - (v / max) * ih;
-  const root = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
-  root.append(s("rect", { x: x(band[0]), y: m.t, width: x(band[1]) - x(band[0]), height: ih, fill: "var(--band)" }), s("line", { class: "grid-line", x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }));
-  root.append(s("text", { x: m.l - 4, y: y(max) + 4, "text-anchor": "end" }, fmt(max)));
-  bins.forEach((n, i) => {
-    if (!n) return;
-    const x0 = m.l + i * bw + 3, x1 = m.l + (i + 1) * bw - 3, top = y(n), r = Math.min(3, y(0) - top);
-    root.append(s("path", { d: `M${x0},${y(0)}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x1 - r}Q${x1},${top} ${x1},${top + r}V${y(0)}Z`, fill: "var(--accent)" }),
-      tipTarget(s("rect", { class: "hit", x: m.l + i * bw, y: m.t, width: bw, height: ih }), `${n} answer${n === 1 ? "" : "s"}`, `score ${(i / 10).toFixed(1)}–${((i + 1) / 10).toFixed(1)}`));
-  });
-  for (const t of [0, 0.5, 1]) root.append(s("text", { x: x(t), y: H - 4, "text-anchor": t === 0 ? "start" : t === 1 ? "end" : "middle" }, t === 0 ? "0 no" : t === 1 ? "yes 1" : "0.5"));
-  return root;
-}
+// A labelled horizontal bar row; value text stays in text ink, the bar carries the color.
+const barRow = (label, share, value, color, tipLines) => h("div", { class: "hbar rung" }, h("span", { text: label, title: label }),
+  h("div", {}, tipTarget(h("div", { class: "b", style: `width:${Math.max(0, share) * 100}%;background:${color || "var(--accent)"}` }), value, ...(tipLines || [label]))), h("span", { class: "num", text: value }));
+
+const VERDICTS = [["right", "var(--good)", "✓ Right"], ["too_low", "var(--critical)", "↑ Too weak"], ["too_high", "var(--warning)", "↓ Could be cheaper"]];
 
 function pageImprove() {
   const ok = filteredDecisions().filter(finalOf);
   if (!ok.length) return [empty("No messages match these filters.")];
-  const th = S.meta.thresholds, n = ok.length;
-  const unsureRows = S.meta.questions.map((q) => {
+  const th = S.meta.thresholds, n = ok.length, labelled = ok.filter((d) => S.feedback[d.id]);
+  const count = (k) => labelled.filter((d) => S.feedback[d.id] === k).length;
+  const tile = (label, value, sub, cls) => h("div", { class: "card kpi" }, h("div", { class: "l", text: label }), h("div", { class: `v${cls ? ` ${cls}` : ""}`, text: value }), sub ? h("div", { class: "s", text: sub }) : null);
+  const kpis = h("div", { class: "kpis" },
+    tile("Rated", `${fmt(labelled.length)}/${fmt(n)}`, `${pct(labelled.length, n)} of messages`),
+    tile("Right", labelled.length ? pct(count("right"), labelled.length) : "–", `${fmt(count("right"))} ratings`, labelled.length ? "good" : null),
+    tile("Too weak", fmt(count("too_low")), "needed a stronger model"),
+    tile("Could be cheaper", fmt(count("too_high")), "a cheaper model would do"));
+
+  const rungsRated = S.meta.ladder.map((r) => r.name).filter((r) => labelled.some((d) => finalOf(d) === r));
+  const verdicts = card("Ratings by model", null,
+    labelled.length ? [legend(VERDICTS.map(([, color, label]) => ({ color, label }))),
+      rungsRated.map((r) => {
+        const mine = labelled.filter((d) => finalOf(d) === r);
+        return h("div", { class: "hbar rung" }, h("span", { text: shortRung(r) }),
+          h("div", { class: "seg" }, VERDICTS.map(([k, color, label]) => { const c = mine.filter((d) => S.feedback[d.id] === k).length; return c ? tipTarget(h("span", { style: `flex:${c};background:${color}` }), `${c} × ${label}`, shortRung(r)) : null; })),
+          h("span", { class: "num", text: fmt(mine.length) }));
+      })] : h("p", { class: "muted", text: "No ratings yet." }));
+
+  const unsure = S.meta.questions.map((q) => {
     const vs = ok.map((d) => d.jev.answers[q.key]).filter(Number.isFinite);
-    return { q, vs, share: vs.filter((v) => Math.abs(v - th.noul_yes) < th.borderline).length / Math.max(1, vs.length) };
-  }).sort((a, b) => b.share - a.share);
-  const questions = card("Questions Jev is often unsure about", `Share of ${fmt(n)} messages where Jev answered "not sure" (0.35–0.65). A "not sure" makes the trees take the stronger path, which costs more.`,
-    unsureRows.map((r) => h("div", { class: "hbar", title: r.q.instructions }, h("span", { text: QLABEL[r.q.key] || r.q.key }), h("div", {}, h("div", { class: "b", style: `width:${r.share * 100}%` })), h("span", { class: "num", text: pct(r.share * 100, 100) }))),
-    todo("reword any question above about 30% so it has a clearer yes or no answer. The questions live in router.rs (QUESTIONS)."),
-    more("See the score distribution per question", h("div", { class: "hist-grid" }, unsureRows.map((r) => h("div", {}, h("div", { style: "font-size:13px;font-weight:600", text: QLABEL[r.q.key] || r.q.key }), histogram(r.vs, [th.clear_no, th.clear_yes]))))));
+    return { q, share: vs.filter((v) => Math.abs(v - th.noul_yes) < th.borderline).length / Math.max(1, vs.length) };
+  }).filter((r) => r.share > 0).sort((a, b) => b.share - a.share);
+  const questions = card("Jev unsure", null,
+    unsure.length ? unsure.map((r) => barRow(QSHORT[r.q.key] || r.q.key, r.share, pct(r.share, 1), r.share >= 0.3 ? "var(--warning)" : null,
+      [QLABEL[r.q.key] || r.q.key, r.share >= 0.3 ? "Over 30%: reword it in router.rs (QUESTIONS)" : "answered 0.35–0.65"]))
+      : h("p", { class: "muted", text: "Jev was sure on every question." }));
 
-  const RULES = { "more effort": "More effort (broad reading, care, several tasks)", "not clearly simple": "Not clearly simple, no Haiku", "unsure between": "Unsure request type, harder one", "reasoning depth": "Deep reasoning or at least Sonnet", "specialist": "Specialist domain, stronger model", "you asked": "You asked for a model", "asks for a stronger": "Asked for a stronger model", irreversible: "Irreversible work gets Opus", "needs clarification": "Unclear, a cheap model asks first", "security-sensitive": "Security work gets Opus", concurrency: "Concurrency work gets Opus", "last answer": "Previous answer failed, go stronger", "trees disagree": "Trees disagreed, one step stronger", "~": "Long chat, keep the model" };
+  const RULES = { "more effort": "More effort", "not clearly simple": "No Haiku", "unsure between": "Unsure type", "reasoning depth": "Deep reasoning", specialist: "Specialist", "you asked": "You asked", "asks for a stronger": "Asked stronger", "asks for tests": "Tests", irreversible: "Irreversible", "needs clarification": "Unclear, ask", "security-sensitive": "Security", concurrency: "Concurrency", "last answer": "Last failed", "trees disagree": "Disagree +1", "~": "Long chat" };
   const rule = (w) => { const k = Object.keys(RULES).find((p) => w.startsWith(p)); return k ? RULES[k] : w.split(":")[0]; };
-  const fired = countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule);
-  const rules = card("Safety rules that changed the choice", `How often each rule overrode the trees' vote, out of ${fmt(n)} messages.`,
-    fired.size ? [...fired].sort((a, b) => b[1] - a[1]).map(([k, c]) => h("div", { class: "hbar" }, h("span", { text: k }), h("div", {}, h("div", { class: "b", style: `width:${(c / n) * 100}%` })), h("span", { class: "num", text: pct(c, n) })))
-      : h("p", { class: "muted", text: "No rule fired: every choice was the trees' plain vote." }),
-    todo("a rule that fires very often is doing the trees' job. Consider changing the trees, or the rule's threshold in router.rs (route)."));
+  const fired = [...countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule)].sort((a, b) => b[1] - a[1]);
+  const rules = card("Rules fired", null,
+    fired.length ? fired.map(([k, c]) => barRow(k, c / n, pct(c, n), null, [k, `${fmt(c)} of ${fmt(n)} messages`])) : h("p", { class: "muted", text: "No rule fired." }));
 
-  const trees = card("Trees that are usually outvoted", "How often each tree's vote matched the final choice. A tree that rarely matches has little influence.",
-    h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Tree" }), h("th", { class: "r", text: "Matched the choice" }), h("th", { text: "Its usual vote" }))),
-      h("tbody", {}, Object.keys(S.meta.forest).map((name) => {
-        const withTrees = ok.filter((d) => d.trees);
-        if (!withTrees.length) return null;
-        const common = [...countBy(withTrees, (d) => d.trees[name].vote)].sort((a, b) => b[1] - a[1])[0];
-        return h("tr", {}, h("td", { text: name }), h("td", { class: "r", text: pct(withTrees.filter((d) => d.trees[name].vote === finalOf(d)).length, withTrees.length) }), h("td", {}, chip(common[0])));
-      }))));
+  // Only v1 records carry trees (v2 logs v1 as `shadow` without them).
+  const withTrees = ok.filter((d) => d.trees);
+  const treeRows = withTrees.length ? Object.keys(S.meta.forest).map((name) => {
+    const usual = [...countBy(withTrees, (d) => d.trees[name].vote)].sort((a, b) => b[1] - a[1])[0][0];
+    return { name, usual, share: withTrees.filter((d) => d.trees[name].vote === finalOf(d)).length / withTrees.length };
+  }).sort((a, b) => b.share - a.share) : [];
+  const trees = card("Tree agreement", null, legend(FAMILIES),
+    treeRows.map((t) => barRow(t.name, t.share, pct(t.share, 1), fam(t.usual).color, [`${t.name}: matched the final choice`, `usually votes ${shortRung(t.usual)}`])));
 
-  const labelled = ok.filter((d) => S.feedback[d.id]);
-  const fb = card("Your feedback", `${fmt(labelled.length)} of ${fmt(n)} messages rated, using the "Rate the router's choices" card above.`,
-    labelled.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Model chosen", "Right", "Needed stronger", "Cheaper would do"].map((t, i) => h("th", { class: i ? "r" : null, text: t })))),
-      h("tbody", {}, S.meta.ladder.map((r) => r.name).filter((r) => labelled.some((d) => finalOf(d) === r)).map((r) => h("tr", {}, h("td", {}, chip(r)),
-        ["right", "too_low", "too_high"].map((k) => h("td", { class: "r", text: fmt(labelled.filter((d) => finalOf(d) === r && S.feedback[d.id] === k).length) }))))))
-      : h("p", { class: "muted", text: "No ratings yet." }),
-    todo('many "needed a stronger one" for one model means the trees or rules should send more work to a stronger option. Many "a cheaper one would do" means the opposite.'));
-
-  const recs = filteredUsage(), bp = $("f-baseline").value;
-  const byRung = new Map();
+  const recs = filteredUsage(), bp = $("f-baseline").value, byRung = new Map();
   for (const r of recs) { const k = r.kind === "manual" ? `manual:${r.model}` : r.rung; byRung.set(k, [...(byRung.get(k) || []), r]); }
   const order = (k) => { const i = S.meta.ladder.findIndex((l) => l.name === k); return i < 0 ? 99 : i; };
-  const spend = card("Where the tokens and money went", `Every Claude request, grouped by the model and effort it ran on. Compared against ${baselineName()}.`,
-    recs.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Model", "Requests", "Tokens", "Cost", `On ${baselineName()}`].map((t, i) => h("th", { class: i ? "r" : null, text: t })))),
-      h("tbody", {}, [...byRung].sort((a, b) => order(a[0]) - order(b[0])).map(([k, rs]) => {
-        const c = costs(rs, bp);
-        return h("tr", {}, h("td", {}, k.startsWith("manual:") ? h("span", { text: `You picked ${(priceFor(k.slice(7)) || {}).name || k.slice(7)}` }) : chip(k)), h("td", { class: "r", text: fmt(rs.length) }), h("td", { class: "r", text: compact(c.tokens) }), h("td", { class: "r", text: money(c.actual) }), h("td", { class: "r", text: money(c.without) }));
-      })))
-      : h("p", { class: "muted", text: "No cost data yet. It starts with your next jev-router claude session." }));
-  return [h("p", { class: "lead", text: "Use this page to tune the router: rate its choices first, then use the cards below to see what to change." }), rateCard(ok), tuningCard(), questions, h("div", { class: "grid" }, rules, trees), h("div", { class: "grid" }, fb, spend)];
+  const groups = [...byRung].sort((a, b) => order(a[0]) - order(b[0])).map(([k, rs]) => ({ k, rs, c: costs(rs, bp) }));
+  const maxCost = Math.max(1e-9, ...groups.map((g) => Math.max(g.c.actual, g.c.without)));
+  const spend = card("Cost by model", null,
+    groups.length ? [legend([{ color: "var(--text-2)", label: "Actual (model color)" }, { color: "var(--baseline)", label: `On ${baselineName()}` }]),
+      groups.map(({ k, rs, c }) => {
+        const manual = k.startsWith("manual:"), label = manual ? `You: ${(priceFor(k.slice(7)) || {}).name || k.slice(7)}` : shortRung(k);
+        const info = [`${fmt(rs.length)} requests · ${compact(c.tokens)} tokens`];
+        return h("div", { class: "hbar spend" }, h("span", { text: label, title: label }),
+          h("div", { class: "pair" },
+            tipTarget(h("div", { class: "b", style: `width:${(c.actual / maxCost) * 100}%;background:${manual ? "var(--muted)" : fam(k).color}` }), money(c.actual), `${label}: actual`, ...info),
+            tipTarget(h("div", { class: "b", style: `width:${(c.without / maxCost) * 100}%;background:var(--baseline)` }), money(c.without), `${label}: on ${baselineName()}`, ...info)),
+          h("span", { class: "num", text: money(c.actual) }));
+      })] : h("p", { class: "muted", text: "No cost data yet." }));
+
+  return [kpis, h("div", { class: "grid2" }, rateCard(ok), verdicts), h("div", { class: "grid3" }, questions, rules, trees), h("div", { class: "grid2" }, spend, tuningCard())];
 }
 
 // --- Routing, filters, loading -------------------------------------------------------------
