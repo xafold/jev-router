@@ -1,14 +1,16 @@
 //! Jev call, secret redaction, decision tracking and terminal views.
 //! Port of the non-proxy half of router/cli.py (the reference).
 
-use crate::router::{rank_of, route_with, Answers, CLEAR_YES, QUESTIONS};
+use crate::router::{
+    questions_v2, rank_of, requested_rung, route_v2, route_with, Answers, CLEAR_YES, QUESTIONS,
+};
 use crate::util::{data_dir, random_id, utc_iso};
 use regex::Regex;
 use serde_json::{json, Map, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -22,6 +24,8 @@ const MAX_CHARS: usize = 2000;
 /// Seconds per attempt; a slow Jev must not stall the turn for long.
 const JEV_TIMEOUT: Duration = Duration::from_secs(8);
 const JEV_RETRIES: usize = 1;
+/// Repo summary sent as background (the opening of CLAUDE.md or README.md).
+const SUMMARY_CHARS: usize = 800;
 
 pub fn log_path() -> PathBuf {
     std::env::var_os("CLAUDE_ROUTER_LOG")
@@ -68,13 +72,46 @@ pub fn clip(text: &str) -> String {
     )
 }
 
-pub fn build_state(prompt: &str, history: &[Value]) -> Value {
+pub fn build_state(prompt: &str, history: &[Value], cwd: &Path) -> Value {
     let start = history.len().saturating_sub(MAX_MESSAGES - 1);
     let history: Vec<Value> = history[start..]
         .iter()
         .map(|m| json!({"role": m["role"], "text": clip(m["text"].as_str().unwrap_or(""))}))
         .collect();
-    json!({"history": history, "latest": clip(prompt)})
+    let mut environment = json!({
+        "assistant": "a coding agent with the user's repository open; it can read any file, search, run commands and edit code",
+        "repository": cwd.file_name().map(|n| n.to_string_lossy().into_owned()),
+        "first_turn": history.is_empty(),
+    });
+    if let Some(summary) = repo_summary(cwd) {
+        environment["repository_summary"] = json!(summary);
+    }
+    json!({"environment": environment, "history": history, "latest": clip(prompt)})
+}
+
+/// What the repository is, so "this project" isn't read literally: the opening of
+/// CLAUDE.md (else README.md) up to the first `##` heading, without headings, clipped and
+/// redacted. Off with JEV_ROUTER_REPO_SUMMARY=off (it is sent to api.typesafe.ai).
+pub fn repo_summary(cwd: &Path) -> Option<String> {
+    if std::env::var("JEV_ROUTER_REPO_SUMMARY").is_ok_and(|v| v == "off") {
+        return None;
+    }
+    let text = ["CLAUDE.md", "README.md"]
+        .iter()
+        .find_map(|f| fs::read_to_string(cwd.join(f)).ok())?;
+    let intro: Vec<&str> = text
+        .lines()
+        .skip_while(|l| l.trim().is_empty() || l.starts_with("# "))
+        .take_while(|l| !l.starts_with("## "))
+        .filter(|l| !l.starts_with('#') && !l.contains("provides guidance to Claude Code"))
+        .collect();
+    let intro = intro
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let intro: String = redact(&intro).chars().take(SUMMARY_CHARS).collect();
+    (!intro.is_empty()).then_some(intro)
 }
 
 /// Load .env without overriding the real environment: ~/.config/jev-router/.env (for a
@@ -100,19 +137,21 @@ pub fn load_env() {
     }
 }
 
-fn ask_jev(state: &Value) -> Result<Map<String, Value>, String> {
+/// v1's Nouls plus v2's questions, all in one request (speculative fan-out).
+pub fn all_questions() -> Map<String, Value> {
+    QUESTIONS
+        .iter()
+        .map(|(k, q)| ((*k).to_string(), json!({"type": "noul", "instructions": q})))
+        .chain(questions_v2().into_iter().map(|(k, q)| (k.to_string(), q)))
+        .collect()
+}
+
+/// One Jev call. Returns model, request_id, latency_ms, usage, `answers` (every Noul as a
+/// number) and `structured` (Choice/Score answers as Jev returned them).
+pub fn ask_jev(state: &Value) -> Result<Map<String, Value>, String> {
     let key = std::env::var("TYPESAFE_API_KEY")
         .map_err(|_| "TypeSafeError: TYPESAFE_API_KEY is not set")?;
-    let questions: Map<String, Value> = QUESTIONS
-        .iter()
-        .map(|(k, instructions)| {
-            (
-                (*k).to_string(),
-                json!({"type": "noul", "instructions": instructions}),
-            )
-        })
-        .collect();
-    let body = json!({"state": state, "model": JEV_MODEL, "questions": questions});
+    let body = json!({"state": state, "model": JEV_MODEL, "questions": all_questions()});
     let agent = ureq::AgentBuilder::new().timeout(JEV_TIMEOUT).build();
     let start = Instant::now();
     let mut attempt = 0;
@@ -155,11 +194,27 @@ fn ask_jev(state: &Value) -> Result<Map<String, Value>, String> {
         .into_json()
         .map_err(|e| format!("TypeSafeAPIResponseValidationError: {e}"))?;
     let mut answers = Answers::new();
-    for (k, _) in QUESTIONS {
-        let p = reply["answers"][k]["noul"]
-            .as_f64()
-            .ok_or_else(|| format!("TypeSafeAPIResponseValidationError: no Noul answer for {k}"))?;
-        answers.insert(k.to_string(), json!(p));
+    let mut structured = Map::new();
+    for (k, q) in all_questions() {
+        let a = &reply["answers"][&k];
+        let bad = || {
+            format!(
+                "TypeSafeAPIResponseValidationError: no {} answer for {k}",
+                q["type"]
+            )
+        };
+        match q["type"].as_str() {
+            Some("noul") => {
+                answers.insert(k.clone(), json!(a["noul"].as_f64().ok_or_else(bad)?));
+            }
+            Some("choice") if a["probabilities"].is_object() => {
+                structured.insert(k.clone(), json!({"choice": a["choice"], "probabilities": a["probabilities"], "confidence": a["confidence"]}));
+            }
+            Some("score") if a["score"].is_f64() => {
+                structured.insert(k.clone(), json!({"score": a["score"], "probabilities": a["probabilities"], "confidence": a["confidence"]}));
+            }
+            _ => return Err(bad()),
+        }
     }
     let mut out = Map::new();
     out.insert("model".into(), reply["model"].clone());
@@ -170,6 +225,7 @@ fn ask_jev(state: &Value) -> Result<Map<String, Value>, String> {
     );
     out.insert("usage".into(), reply["usage"].clone());
     out.insert("answers".into(), Value::Object(answers));
+    out.insert("structured".into(), Value::Object(structured));
     Ok(out)
 }
 
@@ -188,14 +244,10 @@ pub fn decide(
     all_facts.insert("previous_rung".into(), Value::Null);
     all_facts.insert("context_tokens".into(), json!(0));
     all_facts.extend(facts);
-    let state = build_state(prompt, history);
-    let questions: Map<String, Value> = QUESTIONS
-        .iter()
-        .map(|(k, q)| ((*k).to_string(), json!(q)))
-        .collect();
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
+    let dir = std::env::current_dir().unwrap_or_default();
+    let state = build_state(prompt, history, &dir);
+    let questions = all_questions();
+    let cwd = dir.display().to_string();
     let mut record = json!({
         "id": random_id(),
         "ts": utc_iso(),
@@ -217,14 +269,25 @@ pub fn decide(
     let answers = record["jev"]["answers"].as_object().unwrap().clone();
     let previous = record["facts"]["previous_rung"].as_str().and_then(rank_of);
     let context = record["facts"]["context_tokens"].as_u64().unwrap_or(0);
-    // Auto-tuned soft knobs (defaults until enough feedback); logged with the decision.
+    let structured = record["jev"]["structured"].as_object().unwrap().clone();
+    let requested = requested_rung(prompt);
+    // Both rule sets run on the same answers; one serves, the other is logged as `shadow`.
+    let v2 = route_v2(&answers, &structured, previous, context, requested);
+    // Auto-tuned soft knobs (defaults until enough feedback) apply to v1 only.
     let tuning = crate::autotune::current();
-    let decision = route_with(&answers, previous, context, &tuning);
-    record["tuning"] = tuning.to_json();
+    let v1 = route_with(&answers, previous, context, &tuning);
+    let (served, shadow) = if std::env::var("JEV_ROUTER_RULES").is_ok_and(|v| v == "v1") {
+        record["tuning"] = tuning.to_json();
+        (v1, v2)
+    } else {
+        (v2, v1)
+    };
+    record["shadow"] = json!({"rules": shadow.get("rules").cloned().unwrap_or(json!("v1")),
+                              "final": shadow["final"], "why": shadow["why"]});
     record
         .as_object_mut()
         .unwrap()
-        .extend(decision.as_object().unwrap().clone());
+        .extend(served.as_object().unwrap().clone());
     append(&record);
     Ok(record)
 }
@@ -329,6 +392,45 @@ pub fn render(record: &Value) -> String {
         let bar = "#".repeat((p * 20.0).round_ties_even() as usize);
         out.push(format!("  {key:<16}{p:5.2}  {bar:<20}  {label}"));
     }
+    if record["rules"] == "v2" {
+        let st = &jev["structured"];
+        let i = &record["intent"];
+        out.push(format!(
+            "\nRequest type: {} (confidence {:.2}, runner-up {})",
+            i["choice"].as_str().unwrap_or("?"),
+            i["confidence"].as_f64().unwrap_or(0.0),
+            i["runner_up"].as_str().unwrap_or("-"),
+        ));
+        for k in ["depth", "breadth"] {
+            out.push(format!(
+                "  {k:<16}{:5.2} of 3",
+                st[k]["score"].as_f64().unwrap_or(0.0)
+            ));
+        }
+        out.push("\nRules (v2):".into());
+        for reason in record["why"].as_array().into_iter().flatten() {
+            out.push(format!("  - {}", reason.as_str().unwrap_or("")));
+        }
+    } else {
+        render_trees(record, &mut out);
+    }
+    if let Some(shadow) = record["shadow"]["final"]["rung"].as_str() {
+        out.push(format!(
+            "\n(shadow {} rules would pick {shadow})",
+            record["shadow"]["rules"].as_str().unwrap_or("v1")
+        ));
+    }
+    let f = &record["final"];
+    let effort = f["effort"].as_str().unwrap_or("no effort param");
+    out.push(format!(
+        "\nFINAL: {}   ({}, {effort})",
+        f["rung"].as_str().unwrap_or(""),
+        f["model"].as_str().unwrap_or("")
+    ));
+    out.join("\n")
+}
+
+fn render_trees(record: &Value, out: &mut Vec<String>) {
     out.push("\nTrees:".into());
     for (name, tree) in record["trees"].as_object().into_iter().flatten() {
         out.push(format!("  {name}"));
@@ -358,14 +460,6 @@ pub fn render(record: &Value) -> String {
     for reason in record["why"].as_array().into_iter().flatten() {
         out.push(format!("  - {}", reason.as_str().unwrap_or("")));
     }
-    let f = &record["final"];
-    let effort = f["effort"].as_str().unwrap_or("no effort param");
-    out.push(format!(
-        "\nFINAL: {}   ({}, {effort})",
-        f["rung"].as_str().unwrap_or(""),
-        f["model"].as_str().unwrap_or("")
-    ));
-    out.join("\n")
 }
 
 pub fn one_line(record: &Value) -> String {

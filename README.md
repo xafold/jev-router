@@ -11,17 +11,22 @@ Automatic model and effort switching for [Claude Code](https://claude.com/claude
 ```mermaid
 flowchart LR
   CC[Claude Code] --> P[jev-router proxy]
-  P -->|your message| J[Jev: 9 yes/no questions]
-  J --> R[5 decision trees + safety rules]
+  P -->|your message| J[Jev: request type, depth, breadth, yes/no checks]
+  J --> R[starting model + effort, adjustments, safety rules]
   R -->|model + effort| P
   P --> A[Anthropic API]
   A --> P --> CC
 ```
 
-1. The proxy asks Jev a few quick yes/no questions about your message, for example "is it trivial?", "does it touch security?" and "did the last answer fail?".
-2. Five small decision trees vote on a model and effort, and the router takes the middle vote.
-3. Safety rules can raise the choice. Security or concurrency work gets at least Opus. When a fix failed, it goes one step higher.
-4. The request goes to Anthropic with the chosen model and effort, and the whole turn stays on that model.
+1. Claude Code's own side requests (prompt suggestions, recaps) and replies like "continue" or "yes, do it" skip Jev and stay on the current model. A model you name ("switch to opus high") is used for that turn.
+2. Otherwise the proxy asks Jev, in one call (~0.4 s): what kind of request it is (explain code, review, plan / design, debug / fix, implement, chat, and so on, 13 in all), how much reasoning and how much reading it needs, and quick yes/no checks such as "does it touch security?" and "did the last answer fail?".
+3. The request type sets a starting model and effort. Deep reasoning moves it to a stronger model; broad reading, "be thorough" or several tasks add effort. Haiku is used only when every signal says simple.
+4. Safety rules can raise the choice. Security, concurrency or irreversible work (production, schema changes, rewriting git history) gets at least Opus. A failed fix gets one step more; a second failure gets a stronger model. An unclear request is capped at Sonnet low, which asks you first, only when two answers agree it lacks information only you have.
+5. The request goes to Anthropic with the chosen model and effort, and the whole turn stays on that model.
+
+The older rules (five decision trees and a median vote) still run on the same answers and are logged for comparison; `JEV_ROUTER_RULES=v1` serves them instead. `jev-router golden` scores both on 110 labelled prompts in `tests/golden.jsonl`: v2 puts 98% in the acceptable range (v1: 67%, with 30% sent to too weak a model).
+
+**What goes to api.typesafe.ai:** your new message, up to 7 earlier text turns (2,000 characters each, no tool output, secrets redacted), the repository folder name, and the opening paragraph of its `CLAUDE.md` or `README.md` (up to 800 characters, redacted), so Jev knows what "this project" is. Set `JEV_ROUTER_REPO_SUMMARY=off` to leave the paragraph out.
 
 ## Install
 
@@ -85,9 +90,9 @@ Every message, with the model and effort it got and what it cost:
 
 ![Dashboard messages list](docs/img/dashboard-messages.png)
 
-Each message has a page showing Jev's answers, how the decision trees voted, and any safety rule that changed the result:
+Each message has a page showing the request type Jev picked, its reasoning and reading levels, Jev's yes/no answers, and any rule that changed the result:
 
-![Dashboard message page: Jev answers and the tree vote](docs/img/dashboard-message.png)
+![Dashboard message page: request type, Jev answers and the rules that fired](docs/img/dashboard-message.png)
 
 ## Versioning
 
