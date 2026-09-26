@@ -90,9 +90,9 @@ Every message, with the model and effort it got and what it cost:
 
 ![Dashboard messages list](docs/img/dashboard-messages.png)
 
-Each message has a page showing the request type Jev picked, its reasoning and reading levels, Jev's yes/no answers, and any rule that changed the result (the screenshot below still shows the older tree vote):
+Each message has a page showing the request type Jev picked, its reasoning and reading levels, Jev's yes/no answers, and any rule that changed the result:
 
-![Dashboard message page: Jev answers and the tree vote](docs/img/dashboard-message.png)
+![Dashboard message page: request type, Jev answers and the rules that fired](docs/img/dashboard-message.png)
 
 ## Versioning
 
