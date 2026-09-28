@@ -424,7 +424,7 @@ pub fn route_with(
 // --- Decision v2 ---------------------------------------------------------------------
 // Request type (Choice) sets a starting model tier and effort; two Scores (reasoning depth,
 // reading breadth) and atomic Nouls adjust it; floors only raise. v1 above stays as is
-// (JEV_ROUTER_RULES=v1, parity fixtures, auto-tuning). Plan: docs/decision-v2-plan.md.
+// (JEV_ROUTER_RULES=v1, parity fixtures, auto-tuning).
 
 pub const TIER_HAIKU: usize = 0;
 pub const TIER_SONNET: usize = 1;

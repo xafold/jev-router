@@ -1,4 +1,4 @@
-//! v2 must meet the plan's acceptance bar on the golden set (docs/decision-v2-plan.md §6).
+//! v2 must meet the plan's acceptance bar on the golden set.
 //! Replays recorded Jev answers: no network. Re-record after rewording a question.
 
 use jev_router::golden::{evaluate, recorded};
