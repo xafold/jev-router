@@ -7,7 +7,7 @@
 //! routed; its tool loop reuses that rung. HTTP/1.1 is served by hand so every SSE chunk is
 //! flushed as it arrives; upstream is ureq (rustls, connection pool).
 
-use crate::router::{rank_of, H, LADDER, S_MED};
+use crate::router::{rank_of, H, LADDER, PER_MESSAGE_EFFORT_MODELS, S_MED};
 use crate::util::{local_hms, utc_iso};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -20,8 +20,9 @@ use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const AUTO_MODEL: &str = "jev-router";
 /// Tool-loop request with no rung yet (Jev failed on the turn's first request).
@@ -43,6 +44,17 @@ const HOP_HEADERS: [&str; 9] = [
 /// Models that accept mid-conversation `role: "system"` messages and tool_addition/removal
 /// blocks. Claude Code sends both to a model id it doesn't know; the others return 400.
 const SYSTEM_MESSAGE_MODELS: [&str; 1] = ["claude-opus-5-5"];
+
+/// Beta for effort-only `role: "system"` messages (per-message effort).
+const EFFORT_BETA: &str = "mid-conversation-output-config-2026-07-01";
+/// Set when the API rejects the beta (e.g. not enabled for the account): top-level effort
+/// from then on, which rebuilds the cache on each Opus effort change.
+static EFFORT_BETA_REJECTED: AtomicBool = AtomicBool::new(false);
+
+fn effort_messages_on() -> bool {
+    !EFFORT_BETA_REJECTED.load(Ordering::Relaxed)
+        && std::env::var("JEV_ROUTER_EFFORT_MESSAGES").map_or(true, |v| v != "off")
+}
 
 fn reminder() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -250,12 +262,58 @@ pub fn fold_system_messages(body: &mut Value) {
     }
 }
 
+/// Opus 5.5 never reads a cache entry written at a trailing `role: "system"` message: once
+/// an assistant turn follows it, it renders differently (cache diagnostics: messages_changed).
+/// Off first-party hosts Claude Code ends each turn's first request with one (reminders,
+/// tool_addition) and puts the breakpoint there, so the whole history is rewritten every
+/// turn. Move the breakpoint to the user message before them; they're cached next turn.
+pub fn anchor_cache_before_system(body: &mut Value) {
+    let Some(messages) = body["messages"].as_array_mut() else {
+        return;
+    };
+    let tail = messages
+        .iter()
+        .rev()
+        .take_while(|m| m["role"] == "system")
+        .count();
+    let split = messages.len() - tail;
+    if tail == 0 || split == 0 || messages[split - 1]["role"] != "user" {
+        return;
+    }
+    let mut moved = None;
+    for message in &mut messages[split..] {
+        for block in message["content"].as_array_mut().into_iter().flatten() {
+            if let Some(cc) = block
+                .as_object_mut()
+                .and_then(|b| b.shift_remove("cache_control"))
+            {
+                moved = Some(cc);
+            }
+        }
+    }
+    let Some(cc) = moved else {
+        return;
+    };
+    let user = &mut messages[split - 1]["content"];
+    if let Value::String(text) = user {
+        // Renders the same as the string, so the next turn still matches.
+        *user = json!([{"type": "text", "text": text}]);
+    }
+    if let Some(last) = user.as_array_mut().and_then(|b| b.last_mut()) {
+        if last.get("cache_control").is_none() {
+            last["cache_control"] = cc;
+        }
+    }
+}
+
 /// Point the request at a rung. Claude Code composed it for "jev-router" (declared with
 /// thinking + effort), so fields the target model rejects must go.
 pub fn apply_rung(body: &mut Value, rank: usize) {
     let rung = &LADDER[rank];
     body["model"] = json!(rung.model);
-    if !SYSTEM_MESSAGE_MODELS.contains(&rung.model) {
+    if SYSTEM_MESSAGE_MODELS.contains(&rung.model) {
+        anchor_cache_before_system(body);
+    } else {
         fold_system_messages(body);
     }
     let obj = body.as_object_mut().expect("request body is an object");
@@ -296,6 +354,56 @@ pub fn apply_rung(body: &mut Value, rank: usize) {
     }
 }
 
+fn effort_message(effort: &str) -> Value {
+    json!({"role": "system", "content": [], "output_config": {"effort": effort}})
+}
+
+fn is_effort_message(m: &Value) -> bool {
+    m["role"] == "system" && m["content"] == json!([]) && m.get("output_config").is_some()
+}
+
+/// Keep the cache across Opus effort changes: the top-level effort stays at `anchor` (what
+/// the cache was written with) and each change is an effort-only system message inserted
+/// before the user turn it applies to. `marks` are (index in Claude Code's messages, effort),
+/// ascending, re-inserted on every request so the prefix stays byte-identical.
+pub fn insert_effort_messages(body: &mut Value, anchor: &str, marks: &[(usize, &str)]) {
+    body["output_config"]["effort"] = json!(anchor);
+    if let Some(messages) = body["messages"].as_array_mut() {
+        for (i, effort) in marks.iter().rev() {
+            if *i <= messages.len() {
+                messages.insert(*i, effort_message(effort));
+            }
+        }
+    }
+}
+
+/// Undo insert_effort_messages: drop the effort messages, and put the effort in force at
+/// the end back at the top level. Returns false when there were none.
+pub fn strip_effort_messages(body: &mut Value) -> bool {
+    let Some(messages) = body["messages"].as_array_mut() else {
+        return false;
+    };
+    let last = messages
+        .iter()
+        .rev()
+        .find(|m| is_effort_message(m))
+        .map(|m| m["output_config"]["effort"].clone());
+    messages.retain(|m| !is_effort_message(m));
+    if let Some(effort) = &last {
+        body["output_config"]["effort"] = effort.clone();
+    }
+    last.is_some()
+}
+
+/// Cache TTL Claude Code asked for: 1 hour if any system block says so, else 5 minutes.
+/// ponytail: only the system blocks are checked; Claude Code marks those first.
+fn cache_ttl(body: &Value) -> Duration {
+    let hour = body["system"]
+        .as_array()
+        .is_some_and(|blocks| blocks.iter().any(|b| b["cache_control"]["ttl"] == "1h"));
+    Duration::from_secs(if hour { 3600 } else { 300 })
+}
+
 // --- Proxy server --------------------------------------------------------------------
 
 pub type DecideFn =
@@ -306,6 +414,14 @@ struct Conversation {
     rung: Option<usize>,
     decision: Option<String>,
     turn: Option<(Option<usize>, String)>,
+    /// Start of the last request (a cache entry's TTL runs from there) and the prompt size
+    /// the API reported for it.
+    last_request: Option<Instant>,
+    prompt_tokens: Option<u64>,
+    /// Per-message effort on Opus: top-level effort the cache was written with, and the
+    /// effort changes since (see insert_effort_messages).
+    effort_anchor: Option<&'static str>,
+    effort_marks: Vec<(usize, &'static str)>,
 }
 
 /// Per-conversation rung state plus the rewrite step. `decide` is jev::decide, passed in so
@@ -350,6 +466,7 @@ impl Router {
     /// One line per Claude request in usage.jsonl: the tag from `rewrite` plus the token
     /// usage the API reported. The dashboard prices it (actual vs. without the router).
     fn record_usage(&self, tag: &Value, usage: Value, served_model: Option<String>) {
+        self.observe(tag, &usage);
         let mut record = json!({"ts": utc_iso()});
         if let (Some(r), Some(t)) = (record.as_object_mut(), tag.as_object()) {
             r.extend(t.clone());
@@ -364,6 +481,29 @@ impl Router {
             .open(&self.usage_log)
         {
             let _ = writeln!(f, "{record}");
+        }
+    }
+
+    /// Remember the prompt size of a conversation's last request: that is what sits in the
+    /// cache. Tool-less side calls have their own prefix, so they don't count.
+    fn observe(&self, tag: &Value, usage: &Value) {
+        let Some(key) = tag["conversation"].as_str() else {
+            return;
+        };
+        if tag["kind"] == "aux" {
+            return;
+        }
+        let tokens = [
+            "input_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+        ]
+        .iter()
+        .map(|k| usage[k].as_u64().unwrap_or(0))
+        .sum();
+        let mut guard = self.conversations.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(state) = guard.0.get_mut(key) {
+            state.prompt_tokens = Some(tokens);
         }
     }
 
@@ -434,6 +574,12 @@ impl Router {
         let session = session_of(body);
         let tools = has_tools(body);
         if body["model"] != AUTO_MODEL {
+            if body["model"]
+                .as_str()
+                .is_some_and(|m| SYSTEM_MESSAGE_MODELS.contains(&m))
+            {
+                anchor_cache_before_system(body);
+            }
             if tools {
                 // A real agent turn on a model the user picked.
                 self.status(session.as_deref(), json!({"manual": body["model"]}));
@@ -447,6 +593,17 @@ impl Router {
         }
         let key = conversation_key(body);
         let mut state = self.load(&key);
+        let size = serde_json::to_string(&body["messages"]).map_or(0, |s| s.len());
+        let warm = state
+            .last_request
+            .is_some_and(|t| t.elapsed() < cache_ttl(body));
+        // What a model or effort switch would throw away: nothing once the cache expired.
+        let cached = if warm {
+            state.prompt_tokens.unwrap_or(size as u64 / 4)
+        } else {
+            0
+        };
+        state.last_request = Some(Instant::now());
         let mut prompt = fresh_prompt(body);
         // Claude Code's own side requests (suggestions, recaps) and "continue"-style replies
         // skip Jev and keep the pinned rung: no extra latency, and no cache rebuild.
@@ -462,11 +619,16 @@ impl Router {
         if prompt.is_some() && state.turn.as_ref() == Some(&turn) && state.rung.is_some() {
             prompt = None;
         }
-        // Debug: skip Jev and use this rung.
-        let forced = std::env::var("JEV_ROUTER_FORCE_RUNG")
-            .ok()
-            .as_deref()
-            .and_then(rank_of);
+        // Debug: skip Jev and use this rung. A comma list gives one rung per user turn
+        // (the last repeats), so a multi-turn session can exercise a switch.
+        let user_turns = history_of(body)
+            .iter()
+            .filter(|m| m["role"] == "user")
+            .count();
+        let forced = std::env::var("JEV_ROUTER_FORCE_RUNG").ok().and_then(|v| {
+            let rungs: Vec<&str> = v.split(',').map(str::trim).collect();
+            rank_of(rungs[user_turns.min(rungs.len() - 1)])
+        });
         if let Some(text) = &prompt {
             state.turn = Some(turn);
             if forced.is_some() {
@@ -478,8 +640,8 @@ impl Router {
                     "previous_rung".into(),
                     json!(state.rung.map(|r| LADDER[r].name)),
                 );
-                let size = serde_json::to_string(&body["messages"]).map_or(0, |s| s.len());
                 facts.insert("context_tokens".into(), json!(size / 4));
+                facts.insert("cached_tokens".into(), json!(cached));
                 facts.insert("conversation".into(), json!(key));
                 match (self.decide)(text, &history_of(body), facts, "proxy", session.as_deref()) {
                     Ok(record) => {
@@ -496,6 +658,31 @@ impl Router {
             AUX_RUNG
         });
         apply_rung(body, rung);
+        let model = LADDER[rung].model;
+        let mut via_message = false;
+        match LADDER[rung].effort {
+            Some(effort) if effort_messages_on() && PER_MESSAGE_EFFORT_MODELS.contains(&model) => {
+                if !warm || state.effort_anchor.is_none() {
+                    state.effort_anchor = Some(effort);
+                    state.effort_marks.clear();
+                }
+                let anchor = state.effort_anchor.unwrap_or(effort);
+                let current = state.effort_marks.last().map_or(anchor, |m| m.1);
+                if let (true, Some(i)) = (effort != current, latest_user(messages_of(body))) {
+                    match state.effort_marks.last_mut() {
+                        Some(last) if last.0 == i => last.1 = effort,
+                        _ => state.effort_marks.push((i, effort)),
+                    }
+                }
+                via_message = !state.effort_marks.is_empty();
+                insert_effort_messages(body, anchor, &state.effort_marks);
+            }
+            // Another model (or the beta is off): the cache starts over, and so does the anchor.
+            _ => {
+                state.effort_anchor = None;
+                state.effort_marks.clear();
+            }
+        }
         if prompt.is_some() {
             self.status(
                 session.as_deref(),
@@ -511,9 +698,14 @@ impl Router {
                          "decision": state.decision, "conversation": key, "session_id": session});
         self.store(&key, state);
         let note = format!(
-            "{key} {} -> {}",
+            "{key} {} -> {}{}",
             if prompt.is_some() { "routed" } else { "pinned" },
-            LADDER[rung].name
+            LADDER[rung].name,
+            if via_message {
+                " (effort via system message)"
+            } else {
+                ""
+            }
         );
         (note, tag)
     }
@@ -653,6 +845,8 @@ fn forward(
 ) -> io::Result<()> {
     let mut note = None;
     let mut tag = None;
+    // The rewritten body, kept while it carries effort-only system messages (needs the beta).
+    let mut effort_body = None;
     if path.starts_with("/v1/messages") && !body.is_empty() {
         note = Some(match serde_json::from_slice::<Value>(&body) {
             Ok(mut data) if data.is_object() => {
@@ -661,6 +855,9 @@ fn forward(
                     Ok((n, t)) => {
                         body = serde_json::to_vec(&data).unwrap_or(body);
                         tag = Some(t);
+                        if messages_of(&data).iter().any(is_effort_message) {
+                            effort_body = Some(data);
+                        }
                         n
                     }
                     Err(_) => "could not rewrite: panic in rewrite".to_string(),
@@ -689,14 +886,43 @@ fn forward(
         }
     }
     let url = format!("{}{path}", upstream.trim_end_matches('/'));
-    let mut request = agent.request(method, &url);
-    for (k, v) in &merged {
-        request = request.set(k, v);
-    }
-    let result = if body.is_empty() && matches!(method, "GET" | "DELETE" | "OPTIONS") {
-        request.call()
-    } else {
-        request.send_bytes(&body)
+    #[allow(clippy::result_large_err)] // ureq::Error, same as agent.call()
+    let send = |body: &[u8], beta: bool| {
+        let mut request = agent.request(method, &url);
+        for (k, v) in &merged {
+            request = request.set(k, v);
+        }
+        if beta {
+            let betas = merged
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("anthropic-beta"))
+                .map_or(EFFORT_BETA.to_string(), |(_, v)| {
+                    format!("{v}, {EFFORT_BETA}")
+                });
+            request = request.set("anthropic-beta", &betas);
+        }
+        if body.is_empty() && matches!(method, "GET" | "DELETE" | "OPTIONS") {
+            request.call()
+        } else {
+            request.send_bytes(body)
+        }
+    };
+    let beta = effort_body.is_some();
+    let result = match (effort_body, send(&body, beta)) {
+        // ponytail: any 400 on an effort-message request is taken as "beta not available";
+        // a genuinely bad request fails the same way again on the retry.
+        (Some(mut data), Err(ureq::Error::Status(400, r))) => {
+            let error = r.into_string().unwrap_or_default();
+            EFFORT_BETA_REJECTED.store(true, Ordering::Relaxed);
+            router.debug(&format!(
+                "per-message effort rejected, top-level effort from now on: {}",
+                error.chars().take(300).collect::<String>()
+            ));
+            strip_effort_messages(&mut data);
+            body = serde_json::to_vec(&data).unwrap_or(body);
+            send(&body, false)
+        }
+        (_, result) => result,
     };
     let response = match result {
         Ok(r) | Err(ureq::Error::Status(_, r)) => r,
@@ -988,6 +1214,105 @@ mod tests {
         }
     }
 
+    fn opus_turn(messages: Value) -> Value {
+        json!({"model": AUTO_MODEL, "tools": [{"name": "Bash"}],
+               "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+               "output_config": {"effort": "high"}, "messages": messages})
+    }
+
+    fn ok_rung(rung: &'static str) -> DecideFn {
+        match rung {
+            "opus-5.5/xhigh" => {
+                |_, _, _, _, _| Ok(json!({"final": {"rung": "opus-5.5/xhigh"}, "id": "d"}))
+            }
+            "opus-5.5/medium" => {
+                |_, _, _, _, _| Ok(json!({"final": {"rung": "opus-5.5/medium"}, "id": "d"}))
+            }
+            _ => |_, _, _, _, _| Ok(json!({"final": {"rung": "sonnet-5/medium"}, "id": "d"})),
+        }
+    }
+
+    fn router_with(decide: DecideFn) -> Router {
+        let dir = std::env::temp_dir().join(format!("jev-router-test-{}", std::process::id()));
+        Router::new(
+            decide,
+            dir.join("status"),
+            dir.join("debug.log"),
+            dir.join("usage.jsonl"),
+        )
+    }
+
+    #[test]
+    fn opus_effort_changes_ride_in_system_messages_and_keep_the_prefix() {
+        let router = router_with(ok_rung("opus-5.5/medium"));
+        let first = json!([{"role": "user", "content": "plan the auth redesign"}]);
+        let mut a = opus_turn(first.clone());
+        router.rewrite(&mut a);
+        assert_eq!(a["model"], "claude-opus-5-5");
+        assert_eq!(a["output_config"]["effort"], "medium");
+        assert!(!messages_of(&a).iter().any(is_effort_message));
+
+        // Next turn Jev wants xhigh: top-level effort stays "medium" (the cached one) and an
+        // effort-only system message goes right before the new user turn.
+        let router_x = Router {
+            decide: ok_rung("opus-5.5/xhigh"),
+            ..router
+        };
+        let mut later = first.as_array().unwrap().clone();
+        later.push(json!({"role": "assistant", "content": "plan..."}));
+        later.push(json!({"role": "user", "content": "now go deeper on token rotation"}));
+        let mut b = opus_turn(json!(later.clone()));
+        router_x.rewrite(&mut b);
+        assert_eq!(b["output_config"]["effort"], "medium");
+        let msgs = messages_of(&b);
+        assert_eq!(msgs.len(), 4);
+        assert!(is_effort_message(&msgs[2]));
+        assert_eq!(msgs[2]["output_config"]["effort"], "xhigh");
+        // Earlier messages are untouched: the cached prefix still matches.
+        assert_eq!(&msgs[..1], messages_of(&a));
+        assert_eq!(msgs[1]["role"], "assistant");
+
+        // Tool loop within that turn: same effort message at the same place.
+        later.push(json!({"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {}}]}));
+        later.push(json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}));
+        let mut c = opus_turn(json!(later));
+        router_x.rewrite(&mut c);
+        assert_eq!(&messages_of(&c)[..4], msgs);
+        assert_eq!(c["output_config"]["effort"], "medium");
+
+        // The fallback when the beta is rejected: plain top-level effort, no system messages.
+        assert!(strip_effort_messages(&mut c));
+        assert_eq!(c["output_config"]["effort"], "xhigh");
+        assert!(!messages_of(&c).iter().any(is_effort_message));
+    }
+
+    #[test]
+    fn leaving_opus_drops_the_effort_anchor() {
+        let router = router_with(ok_rung("opus-5.5/medium"));
+        let mut a = opus_turn(json!([{"role": "user", "content": "plan the auth redesign"}]));
+        router.rewrite(&mut a);
+        let router_s = Router {
+            decide: ok_rung("sonnet"),
+            ..router
+        };
+        let mut b = opus_turn(json!([
+            {"role": "user", "content": "plan the auth redesign"},
+            {"role": "assistant", "content": "plan..."},
+            {"role": "user", "content": "rename the config file"}
+        ]));
+        router_s.rewrite(&mut b);
+        assert_eq!(b["model"], "claude-sonnet-5");
+        assert!(!messages_of(&b).iter().any(|m| m["role"] == "system"));
+    }
+
+    #[test]
+    fn cache_ttl_reads_the_system_blocks() {
+        let mut body = opus_turn(json!([]));
+        assert_eq!(cache_ttl(&body), Duration::from_secs(300));
+        body["system"][0]["cache_control"]["ttl"] = json!("1h");
+        assert_eq!(cache_ttl(&body), Duration::from_secs(3600));
+    }
+
     #[test]
     fn folds_system_messages_for_sonnet_and_haiku() {
         let real = json!({
@@ -1018,5 +1343,55 @@ mod tests {
         let mut opus = real.clone();
         apply_rung(&mut opus, crate::router::O_HIGH);
         assert_eq!(opus["messages"][1]["role"], "system"); // Opus 5.5 takes it as-is
+    }
+
+    #[test]
+    fn opus_breakpoint_moves_off_trailing_system_messages() {
+        let cc = json!({"type": "ephemeral", "ttl": "1h"});
+        // Turn 2 as Claude Code sends it to a proxy.
+        let mut body = json!({
+            "model": "claude-opus-5-5",
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "one"}]},
+                {"role": "system", "content": "hook said x"},
+                {"role": "assistant", "content": [{"type": "text", "text": "one"}]},
+                {"role": "user", "content": "two"},
+                {"role": "system", "content": [
+                    {"type": "text", "text": "tools became available"},
+                    {"type": "tool_addition", "tool": {"type": "tool_reference", "name": "Docs"}, "cache_control": cc},
+                ]},
+            ],
+        });
+        let router = Router::new(
+            |_, _, _, _, _| Err("unused".into()),
+            PathBuf::from("/nonexistent"),
+            PathBuf::from("/nonexistent"),
+            PathBuf::from("/nonexistent"),
+        );
+        router.rewrite(&mut body); // manual pick of Opus 5.5
+        let m = messages_of(&body);
+        assert_eq!(
+            m[3]["content"],
+            json!([{"type": "text", "text": "two", "cache_control": cc}])
+        );
+        assert!(m[4]["content"][1].get("cache_control").is_none());
+        assert_eq!(m[4]["content"][0]["text"], "tools became available");
+
+        // Tool loop (last message is not a system message): untouched.
+        let mut looped = body.clone();
+        looped["messages"].as_array_mut().unwrap().push(
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok", "cache_control": cc}]}),
+        );
+        let before = looped.clone();
+        anchor_cache_before_system(&mut looped);
+        assert_eq!(looped, before);
+
+        // Sonnet folds system messages into user text instead: breakpoint stays where it was.
+        let mut sonnet = json!({"model": AUTO_MODEL, "messages": [
+            {"role": "user", "content": "two"},
+            {"role": "system", "content": [{"type": "text", "text": "x", "cache_control": cc}]},
+        ]});
+        apply_rung(&mut sonnet, crate::router::S_LOW);
+        assert_eq!(sonnet["messages"][1]["content"][0]["cache_control"], cc);
     }
 }
