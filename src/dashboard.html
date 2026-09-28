@@ -340,6 +340,7 @@ function reasonSentence(w) {
   if ((m = w.match(/^security-sensitive: floor -> (.+)$/))) return `Security work always gets at least ${friendly(m[1])}.`;
   if ((m = w.match(/^concurrency: floor -> (.+)$/))) return `Concurrency work always gets at least ${friendly(m[1])}.`;
   if ((m = w.match(/^last answer \((.+)\) failed: floor -> (.+)$/))) return `The previous answer (from ${friendly(m[1])}) didn't work, so it moved to a stronger option: ${friendly(m[2])}.`;
+  if ((m = w.match(/^~(\d+) cached tokens: (\S+) would rebuild the cache \(~\$([\d.]+)\) -> (.+)$/))) return `The prompt cache already holds ~${fmt(m[1])} tokens. Switching to ${friendly(m[2])} would have rewritten it (router estimate ~$${m[3]}), so it stayed on ${friendly(m[4])} and the cache wasn't reset.`;
   if ((m = w.match(/^~(\d+) context tokens: no downgrade \(cache rebuild\) -> (.+)$/))) return `The conversation is already long (~${fmt(m[1])} tokens). Switching to a cheaper model would throw away the prompt cache and cost more, so it stayed on ${friendly(m[2])}.`;
   return w;
 }
@@ -356,6 +357,7 @@ function shortReason(d) {
   if (w.startsWith("security")) return "security rule";
   if (w.startsWith("concurrency")) return "concurrency rule";
   if (w.startsWith("last answer")) return "previous answer failed";
+  if (w.includes("cached tokens")) return "kept the prompt cache";
   if (w.includes("context tokens")) return "long chat, kept the model";
   if (w.startsWith("trees disagree")) return "trees disagreed, one step stronger";
   const yes = Object.entries(d.jev.answers || {}).filter(([k, p]) => k !== "clarified" && k !== "can_start" && p > S.meta.thresholds.clear_yes).map(([k]) => QSHORT[k] || k);
@@ -409,6 +411,44 @@ function costs(records, baseline) {
   return { actual, without, tokens, priced, n, byFam };
 }
 
+// Cache-aware routing (v2): the switch the cache guard held back, as [note, tokens, wanted, kept].
+const cacheNote = (d) => (d.why || []).map((w) => w.match(/^~(\d+) cached tokens: (\S+) would rebuild the cache .*-> (\S+)$/)).find(Boolean) || null;
+// The message's first request: did it read the conversation's cache or rewrite it?
+function cacheStatus(d, recs) {
+  const u = (recs[0] || {}).usage;
+  if (!u || !finalOf(d)) return null;
+  const read = u.cache_read_input_tokens || 0, wrote = u.cache_creation_input_tokens || 0;
+  if (!(d.facts || {}).previous_rung) return `Cache started: ${fmt(wrote)} tokens written`;
+  return read >= wrote ? `Cache not reset: ${fmt(read)} tokens read, ${fmt(wrote)} new` : `Cache reset: ${fmt(wrote)} tokens rewritten`;
+}
+// What keeping the cache saved: the message re-priced on the rung the guard held back, with the
+// first request's cache reads written there instead. Counts the kept model's pricier output too,
+// so it can be negative. ponytail: assumes the same token counts on the other model.
+function cacheSaved(d, recs) {
+  const m = cacheNote(d), want = m && S.meta.ladder.find((l) => l.name === m[2]), p = want && priceFor(want.model);
+  if (!p || !recs.length) return null;
+  const hour = recs.some((r) => ((r.usage || {}).cache_creation || {}).ephemeral_1h_input_tokens > 0);
+  let actual = 0, alt = 0;
+  recs.forEach((r, i) => {
+    const u = r.usage || {}, a = costOf(u, priceFor(r.model || r.served_model));
+    if (a === null) return;
+    let v = u;
+    if (i === 0) {
+      const read = u.cache_read_input_tokens || 0, c = u.cache_creation || {}, w1 = c.ephemeral_1h_input_tokens || 0;
+      const w5 = c.ephemeral_5m_input_tokens ?? Math.max(0, (u.cache_creation_input_tokens || 0) - w1);
+      v = { ...u, cache_read_input_tokens: 0, cache_creation_input_tokens: (u.cache_creation_input_tokens || 0) + read,
+        cache_creation: { ephemeral_1h_input_tokens: w1 + (hour ? read : 0), ephemeral_5m_input_tokens: w5 + (hour ? 0 : read) } };
+    }
+    actual += a; alt += costOf(v, p);
+  });
+  return alt - actual;
+}
+const cacheLine = (d, recs) => {
+  const st = cacheStatus(d, recs), m = cacheNote(d), s = cacheSaved(d, recs);
+  if (!st) return null;
+  return m ? `${st} · stayed on ${friendly(m[3])} instead of ${friendly(m[2])} · ${s >= 0 ? "saved" : "cost"} ${money(Math.abs(s ?? 0))}` : st;
+};
+
 // Filters: messages by everything; usage by date and project (usage rows carry the session).
 function since() {
   const r = $("f-range").value;
@@ -455,9 +495,11 @@ function kpiRow(ds) {
   const c = costs(filteredUsage(), $("f-baseline").value);
   const jev = ds.filter(finalOf).reduce((a, d) => a + ((d.jev.usage || {}).input_tokens || 0), 0) * S.meta.jev_per_mtok / 1e6;
   const spent = c.actual + jev, saved = c.without - spent, failed = ds.filter((d) => !finalOf(d)).length;
+  const byId = usageByDecision(), kept = ds.map((d) => cacheSaved(d, byId.get(d.id) || [])).filter(Number.isFinite), keptSum = kept.reduce((a, x) => a + x, 0);
+  const keptNote = kept.length ? ` · ${money(keptSum)} from keeping the cache (${fmt(kept.length)} msg)` : "";
   const tile = (label, value, sub, cls) => h("div", { class: "card kpi" }, h("div", { class: "l", text: label }), h("div", { class: `v${cls ? ` ${cls}` : ""}`, text: value }), sub ? h("div", { class: "s", text: sub }) : null);
   return h("div", { class: "kpis" },
-    tile(saved >= 0 ? "Saved" : "Extra cost", c.priced ? money(Math.abs(saved)) : "–", c.priced && c.without ? `${Math.round((Math.abs(saved) / c.without) * 100)}% vs ${baselineName()}` : "no cost data yet", c.priced && saved > 0 ? "good" : null),
+    tile(saved >= 0 ? "Saved" : "Extra cost", c.priced ? money(Math.abs(saved)) : "–", c.priced && c.without ? `${Math.round((Math.abs(saved) / c.without) * 100)}% vs ${baselineName()}${keptNote}` : "no cost data yet", c.priced && saved > 0 ? "good" : null),
     tile("Spent", c.priced ? money(spent) : "–", c.priced ? `${money(c.without)} on ${baselineName()}` : null),
     tile("Messages", fmt(ds.length), failed ? `${fmt(failed)} failed routing` : null),
     tile("Tokens", compact(c.tokens), `${fmt(c.n)} requests`));
@@ -567,7 +609,7 @@ function messageList(ds, limit, compact) {
   const rungIndex = (d) => S.meta.ladder.findIndex((l) => l.name === finalOf(d));
   let rows = [...ds].reverse().map((d) => {
     const u = costsBy.get(d.id) || [], c = u.length ? costs(u, bp) : null;
-    return { d, c: c && c.priced ? c : null };
+    return { d, c: c && c.priced ? c : null, cache: cacheLine(d, u) };
   });
   if (!compact) {
     const key = { time: (r) => new Date(r.d.ts).getTime(), model: (r) => rungIndex(r.d), cost: (r) => (r.c ? r.c.actual : null) }[msgSort.key];
@@ -585,11 +627,11 @@ function messageList(ds, limit, compact) {
     items.push(h("li", { class: "head" }, head("model", "Model"), h("span", { text: "Message" }), head("time", "Time"), head("cost", "Cost")));
   }
   let day = null;
-  for (const { d, c } of rows) {
+  for (const { d, c, cache } of rows) {
     if (!compact && byTime && dayLabel(d.ts) !== day) { day = dayLabel(d.ts); items.push(h("li", { class: "day", text: day })); }
     const saved = c ? c.without - c.actual : 0, open = () => { location.hash = `#/m/${d.id}`; };
     const when = compact ? ago(d.ts) : byTime || dayLabel(d.ts) === "Today" ? new Date(d.ts).toLocaleTimeString(undefined, clock) : `${shortDate(d.ts)} ${new Date(d.ts).toLocaleTimeString(undefined, clock)}`;
-    items.push(h("li", { tabindex: "0", style: `--fam:${fam(finalOf(d)).color}`, title: `${words(latestOf(d))}\nWhy: ${shortReason(d)} · ${project(d.cwd)}`, onclick: open, onkeydown: (e) => { if (e.key === "Enter") open(); } },
+    items.push(h("li", { tabindex: "0", style: `--fam:${fam(finalOf(d)).color}`, title: `${words(latestOf(d))}\nWhy: ${shortReason(d)} · ${project(d.cwd)}${cache ? `\n${cache}` : ""}`, onclick: open, onkeydown: (e) => { if (e.key === "Enter") open(); } },
       miniChip(finalOf(d)),
       h("div", { class: "msg", text: words(latestOf(d)) || "(empty)" }),
       h("span", { class: "when", text: when }),
@@ -633,7 +675,7 @@ function pageMessages() {
 const RAIL = [["unsure between", "unsure type, harder one"], ["reasoning depth", "deep reasoning"], ["specialist", "specialist domain"], ["more effort", "more effort"],
   ["asks for tests", "tests, more effort"], ["not clearly simple", "not clearly simple, no Haiku"], ["you asked", "you asked for it"], ["asks for a stronger", "asked for stronger"],
   ["irreversible", "irreversible rule"], ["needs clarification: cap -> sonnet", "unclear, Sonnet asks"], ["trees disagree", "trees disagree +1"], ["auto-tuning", "tuning nudge"], ["needs clarification", "unclear, Haiku asks"], ["security", "security rule"],
-  ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["context tokens", "long chat, no downgrade"]];
+  ["concurrency", "concurrency rule"], ["last answer", "last answer failed"], ["~", "cache kept, no switch"]];
 const FLOWQ = { ...QSHORT, perf: "scale needs", prior_failed: "failed before", open_ended: "system design", repeat_failure: "failed again",
   compound: "several tasks", asks_quality: "asks for care", unfamiliar_domain: "specialist", can_start: "can start", missing_user_info: "needs your info",
   asks_stronger_model: "asks stronger" };
@@ -796,7 +838,8 @@ function pageMessage(id) {
   const rung = finalOf(d), th = S.meta.thresholds, state = d.jev.state || {};
   const text = words(latestOf(d));
   const head = h("div", {}, back, h("p", { class: "title", text: clip(text, 80), title: text }),
-    h("div", { class: "muted", style: "font-size:13px", text: `${new Date(d.ts).toLocaleString()} · ${project(d.cwd)}` }));
+    h("div", { class: "muted", style: "font-size:13px", text: `${new Date(d.ts).toLocaleString()} · ${project(d.cwd)}` }),
+    (cache => cache ? h("div", { class: "muted", style: "font-size:13px", text: cache }) : null)(cacheLine(d, usageByDecision().get(id) || [])));
   const asked = card("Prompt", null, h("div", { class: "quote clamp", text: latestOf(d) }),
     (state.history || []).length ? more(`${state.history.length} earlier turns`, state.history.map((t) => h("div", { class: "turn" }, h("span", { text: t.role }), t.text))) : null);
   if (!rung) return [head, card("Routing failed", "Jev couldn't be reached; the previous model was kept.", h("p", { class: "err", text: `⚠ ${d.error}` })), asked];
@@ -820,7 +863,7 @@ function pageMessage(id) {
 
   const f = d.facts || {};
   const tech = card(null, null, more("Technical details", h("dl", { class: "kv", style: "margin-top:10px" },
-    [["decision id", d.id], ["model id", `${d.final.model} (effort ${d.final.effort || "none"})`], ["previous model", f.previous_rung ? friendly(f.previous_rung) : "none (first message)"], ["conversation size", `~${fmt(f.context_tokens || 0)} tokens`],
+    [["decision id", d.id], ["model id", `${d.final.model} (effort ${d.final.effort || "none"})`], ["previous model", f.previous_rung ? friendly(f.previous_rung) : "none (first message)"], ["conversation size", `~${fmt(f.context_tokens || 0)} tokens`], ...(f.cached_tokens !== undefined ? [["warm prompt cache", `~${fmt(f.cached_tokens)} tokens`]] : []),
      ["Jev", `${d.jev.model}, ${fmt(d.jev.latency_ms)} ms, ${fmt(u.input_tokens || 0)} tokens, request ${d.jev.request_id || "–"}`], ["session", d.session_id || "–"], ["source", d.source], ["folder", d.cwd]]
       .map(([k, v]) => [h("dt", { text: k }), h("dd", { text: String(v) })]))));
   return [head, kpis, h("div", { class: "grid2 even" }, asked, jev), card("How it decided", null, decisionFlow(d)), tech];
@@ -863,7 +906,7 @@ function pageImprove() {
       [QLABEL[r.q.key] || r.q.key, r.share >= 0.3 ? "Over 30%: reword it in router.rs (QUESTIONS)" : "answered 0.35–0.65"]))
       : h("p", { class: "muted", text: "Jev was sure on every question." }));
 
-  const RULES = { "more effort": "More effort", "not clearly simple": "No Haiku", "unsure between": "Unsure type", "reasoning depth": "Deep reasoning", specialist: "Specialist", "you asked": "You asked", "asks for a stronger": "Asked stronger", "asks for tests": "Tests", irreversible: "Irreversible", "needs clarification": "Unclear, ask", "security-sensitive": "Security", concurrency: "Concurrency", "last answer": "Last failed", "trees disagree": "Disagree +1", "~": "Long chat" };
+  const RULES = { "more effort": "More effort", "not clearly simple": "No Haiku", "unsure between": "Unsure type", "reasoning depth": "Deep reasoning", specialist: "Specialist", "you asked": "You asked", "asks for a stronger": "Asked stronger", "asks for tests": "Tests", irreversible: "Irreversible", "needs clarification": "Unclear, ask", "security-sensitive": "Security", concurrency: "Concurrency", "last answer": "Last failed", "trees disagree": "Disagree +1", "~": "Cache kept" };
   const rule = (w) => { const k = Object.keys(RULES).find((p) => w.startsWith(p)); return k ? RULES[k] : w.split(":")[0]; };
   const fired = [...countBy(ok.flatMap((d) => (d.why || []).slice(1)), rule)].sort((a, b) => b[1] - a[1]);
   const rules = card("Rules fired", null,
