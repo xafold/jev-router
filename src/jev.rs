@@ -232,7 +232,7 @@ pub fn ask_jev(state: &Value) -> Result<Map<String, Value>, String> {
 // --- Tracking ------------------------------------------------------------------------
 
 /// Ask Jev, route, and append the full record to the log. On Jev failure the error record
-/// is logged and the error returned. `facts` are code-known: previous_rung, context_tokens.
+/// is logged and the error returned. `facts` are code-known: previous_rung, context_tokens, cached_tokens.
 pub fn decide(
     prompt: &str,
     history: &[Value],
@@ -272,7 +272,9 @@ pub fn decide(
     let structured = record["jev"]["structured"].as_object().unwrap().clone();
     let requested = requested_rung(prompt);
     // Both rule sets run on the same answers; one serves, the other is logged as `shadow`.
-    let v2 = route_v2(&answers, &structured, previous, context, requested);
+    // The proxy knows how much of the prompt sits in a warm cache; a dry run doesn't.
+    let cached = record["facts"]["cached_tokens"].as_u64().unwrap_or(context);
+    let v2 = route_v2(&answers, &structured, previous, cached, requested);
     // Auto-tuned soft knobs (defaults until enough feedback) apply to v1 only.
     let tuning = crate::autotune::current();
     let v1 = route_with(&answers, previous, context, &tuning);

@@ -78,6 +78,37 @@ pub const DISAGREE_SPREAD: usize = 4;
 /// Switching model or effort invalidates the prompt cache, so past this size a downgrade
 /// costs more than it saves.
 pub const DOWNGRADE_MAX_CONTEXT_TOKENS: u64 = 20_000;
+/// v2: an upgrade that rebuilds a warm cache goes ahead only when the rebuild costs at most
+/// this ($). Sonnet 5 -> Opus 5.5 passes up to ~52k cached tokens, a Sonnet effort raise
+/// up to ~109k. Safety/failure floors and a model the user names always go ahead.
+pub const UPGRADE_REBUILD_BUDGET_USD: f64 = 0.25;
+/// Models that take per-message effort (beta mid-conversation-output-config-2026-07-01):
+/// their effort changes ride in a `role: "system"` message and keep the cache. On every
+/// other model a top-level effort change invalidates the messages cache like a model switch.
+pub const PER_MESSAGE_EFFORT_MODELS: [&str; 1] = ["claude-opus-5-5"];
+
+/// ($/1M input, $/1M cache read) for the ladder's models.
+fn prices(model: &str) -> (f64, f64) {
+    match model {
+        "claude-opus-5-5" => (4.0, 0.20),
+        "claude-sonnet-5" => (2.0, 0.20),
+        _ => (1.0, 0.10),
+    }
+}
+
+/// Does going from `previous` to `next` keep the prompt cache?
+pub fn keeps_cache(previous: usize, next: usize) -> bool {
+    let (a, b) = (&LADDER[previous], &LADDER[next]);
+    a.model == b.model && (a.effort == b.effort || PER_MESSAGE_EFFORT_MODELS.contains(&b.model))
+}
+
+/// Extra $ for rewriting `cached` tokens on `next` (5-minute write, 1.25x input) instead of
+/// reading them on `previous`.
+pub fn rebuild_cost(previous: usize, next: usize, cached: u64) -> f64 {
+    let write = prices(LADDER[next].model).0 * 1.25;
+    let read = prices(LADDER[previous].model).1;
+    cached as f64 * (write - read) / 1e6
+}
 
 /// State is {"history": [earlier turns], "latest": "<new user message>"}. Every question is
 /// about `latest`; `history` is only context, so an old failure or topic can't leak forward.
@@ -236,7 +267,8 @@ pub fn meta() -> Value {
         "intents": INTENTS.iter().map(|i| json!({"key": i.key, "start": LADDER[to_ladder(i.tier, i.effort)].name, "what": i.what})).collect::<Vec<_>>(),
         "forest": forest,
         "thresholds": {"noul_yes": NOUL_YES, "borderline": BORDERLINE, "clear_yes": CLEAR_YES, "clear_no": CLEAR_NO,
-                       "disagree_spread": DISAGREE_SPREAD, "downgrade_max_context_tokens": DOWNGRADE_MAX_CONTEXT_TOKENS},
+                       "disagree_spread": DISAGREE_SPREAD, "downgrade_max_context_tokens": DOWNGRADE_MAX_CONTEXT_TOKENS,
+                       "upgrade_rebuild_budget_usd": UPGRADE_REBUILD_BUDGET_USD},
     })
 }
 
@@ -624,11 +656,12 @@ fn next_tier(rank: usize) -> usize {
 
 /// Answers + code-known facts -> v2 decision. `structured` holds the Choice/Score answers
 /// (`intent`, `depth`, `breadth`); `requested` is a model the user named (requested_rung).
+/// `cached_tokens` is the prompt the API holds in a still-warm cache (0 once it expired).
 pub fn route_v2(
     answers: &Answers,
     structured: &Map<String, Value>,
     previous_rung: Option<usize>,
-    context_tokens: u64,
+    cached_tokens: u64,
     requested: Option<usize>,
 ) -> Value {
     let p = |k: &str| noul(answers, k);
@@ -733,6 +766,8 @@ pub fn route_v2(
         }
     }
     let mut rank = to_ladder(tier, effort);
+    // A hard rule set the rung: worth a cache rebuild.
+    let mut forced = requested.is_some();
 
     if let Some(r) = requested {
         rank = r;
@@ -770,6 +805,7 @@ pub fn route_v2(
     ] {
         if yes(k) && rank < O_MED && (work || k == "irreversible") {
             rank = O_MED;
+            forced = true;
             why.push(format!("{label}: floor -> {}", name(rank)));
         }
     }
@@ -782,6 +818,7 @@ pub fn route_v2(
             };
             if rank < floor {
                 rank = floor;
+                forced = true;
                 why.push(format!(
                     "last answer ({}) {how}: floor -> {}",
                     name(previous),
@@ -789,12 +826,9 @@ pub fn route_v2(
                 ));
             }
         }
-        if rank < previous && context_tokens > DOWNGRADE_MAX_CONTEXT_TOKENS {
-            rank = previous;
-            why.push(format!(
-                "~{context_tokens} context tokens: no downgrade (cache rebuild) -> {}",
-                name(rank)
-            ));
+        if let Some((guarded, note)) = cache_guard(previous, rank, cached_tokens, forced) {
+            rank = guarded;
+            why.push(note);
         }
     }
 
@@ -809,6 +843,37 @@ pub fn route_v2(
         "why": why,
         "final": {"rung": rung.name, "model": rung.model, "effort": rung.effort},
     })
+}
+
+/// A model switch rewrites the whole cache; so does a top-level effort change (only the
+/// messages part, but that is the bulk). Past DOWNGRADE_MAX_CONTEXT_TOKENS of warm cache:
+/// - Opus 5.5 effort moves freely (per-message effort keeps the cache);
+/// - leaving Opus for a cheaper model becomes Opus medium: Opus 5.5 cache reads cost the
+///   same as Sonnet 5's, so the switch would only buy a rewrite;
+/// - other downgrades keep the previous rung;
+/// - upgrades go ahead when the rebuild is cheap, leave Haiku, or a hard rule asks.
+fn cache_guard(previous: usize, rank: usize, cached: u64, forced: bool) -> Option<(usize, String)> {
+    if forced || cached <= DOWNGRADE_MAX_CONTEXT_TOKENS || keeps_cache(previous, rank) {
+        return None;
+    }
+    let name = |r: usize| LADDER[r].name;
+    let cost = rebuild_cost(previous, rank, cached);
+    if rank > previous && (previous == H || cost <= UPGRADE_REBUILD_BUDGET_USD) {
+        return None;
+    }
+    let kept = if rank < previous && PER_MESSAGE_EFFORT_MODELS.contains(&LADDER[previous].model) {
+        O_MED
+    } else {
+        previous
+    };
+    Some((
+        kept,
+        format!(
+            "~{cached} cached tokens: {} would rebuild the cache (~${cost:.2}) -> {}",
+            name(rank),
+            name(kept)
+        ),
+    ))
 }
 
 #[cfg(test)]
@@ -1049,10 +1114,54 @@ mod tests {
         );
         assert_eq!(rung_v2(&again, Some(S_HIGH), 0, None), name(O_MED));
         assert_eq!(rung_v2(&again, Some(O_HIGH), 0, None), name(O_MAX));
-        // Cache guard still holds a long conversation on its rung.
+        // Cache guard: a long Opus conversation stays on Opus, only effort drops.
         let small = v2("chat", 0.9, 0.0, 0.0, &[]);
-        assert_eq!(rung_v2(&small, Some(O_HIGH), 50_000, None), name(O_HIGH));
+        assert_eq!(rung_v2(&small, Some(O_HIGH), 50_000, None), name(O_MED));
         assert_eq!(rung_v2(&small, Some(O_HIGH), 5_000, None), name(H));
+    }
+
+    #[test]
+    fn v2_cache_aware_switching() {
+        assert!(keeps_cache(O_MED, O_MAX) && keeps_cache(O_MAX, O_MED));
+        assert!(
+            !keeps_cache(S_MED, S_HIGH) && !keeps_cache(S_MED, O_MED) && !keeps_cache(H, S_LOW)
+        );
+        // 150k on Sonnet -> Opus: write 150k at $5/M, minus the $0.20/M read it replaces.
+        assert!((rebuild_cost(S_MED, O_MED, 150_000) - 0.72).abs() < 1e-9);
+
+        let chat = v2("chat", 0.9, 0.0, 0.0, &[]);
+        let design = v2("plan_design", 0.9, 2.0, 2.0, &[]); // O_XHIGH from scratch
+                                                            // Opus: effort moves both ways at any size (per-message effort keeps the cache).
+        assert_eq!(rung_v2(&design, Some(O_MED), 180_000, None), name(O_XHIGH));
+        // Leaving Opus for Sonnet/Haiku with a big warm cache: Opus medium instead.
+        assert_eq!(rung_v2(&chat, Some(O_XHIGH), 180_000, None), name(O_MED));
+        // Sonnet with a big warm cache: no model or effort change without a hard reason.
+        assert_eq!(rung_v2(&design, Some(S_MED), 150_000, None), name(S_MED));
+        assert_eq!(rung_v2(&chat, Some(S_HIGH), 150_000, None), name(S_HIGH));
+        // ...but a cheap rebuild (small cache) or an expired cache (0) switches freely.
+        assert_eq!(rung_v2(&design, Some(S_MED), 30_000, None), name(O_XHIGH));
+        assert_eq!(rung_v2(&design, Some(S_MED), 0, None), name(O_XHIGH));
+        assert_eq!(rung_v2(&chat, Some(S_HIGH), 0, None), name(H));
+        // Hard rules win over the cache: safety floor, repeated failure, a named model.
+        let risky = v2("implement", 0.9, 1.0, 1.0, &[("security", 0.9)]);
+        assert_eq!(rung_v2(&risky, Some(S_MED), 150_000, None), name(O_MED));
+        let again = v2(
+            "debug_fix",
+            0.9,
+            1.5,
+            1.0,
+            &[("prior_failed", 0.9), ("repeat_failure", 0.9)],
+        );
+        assert_eq!(rung_v2(&again, Some(S_HIGH), 150_000, None), name(O_MED));
+        assert_eq!(
+            rung_v2(&chat, Some(O_HIGH), 150_000, Some(S_LOW)),
+            name(S_LOW)
+        );
+        // Haiku is never a trap: a harder request leaves it.
+        let code = v2("implement", 0.9, 1.5, 1.0, &[]);
+        assert_eq!(rung_v2(&code, Some(H), 150_000, None), name(S_MED));
+        let why = route_v2(&design.0, &design.1, Some(S_MED), 150_000, None)["why"].to_string();
+        assert!(why.contains("would rebuild the cache"), "{why}");
     }
 
     #[test]
