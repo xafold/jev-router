@@ -22,7 +22,8 @@ flowchart LR
 2. Otherwise the proxy asks Jev, in one call (~0.4 s): what kind of request it is (explain code, review, plan / design, debug / fix, implement, chat, and so on, 13 in all), how much reasoning and how much reading it needs, and quick yes/no checks such as "does it touch security?" and "did the last answer fail?".
 3. The request type sets a starting model and effort. Deep reasoning moves it to a stronger model; broad reading, "be thorough" or several tasks add effort. Haiku is used only when every signal says simple.
 4. Safety rules can raise the choice. Security, concurrency or irreversible work (production, schema changes, rewriting git history) gets at least Opus. A failed fix gets one step more; a second failure gets a stronger model. An unclear request is capped at Sonnet low, which asks you first, only when two answers agree it lacks information only you have.
-5. The request goes to Anthropic with the chosen model and effort, and the whole turn stays on that model.
+5. The prompt cache is protected. Once a long conversation has a warm cache (more than 20k tokens), switching model or top-level effort would rewrite it. So the router keeps the model, unless the rewrite is cheap or a safety rule asks for the switch. On Opus 5.5, effort still moves freely: the change goes in a per-message effort system message (beta `mid-conversation-output-config-2026-07-01`), which keeps the cache. Set `JEV_ROUTER_EFFORT_MESSAGES=off` to turn that off. Details and measurements: [docs/cache-aware-switching.md](docs/cache-aware-switching.md).
+6. The request goes to Anthropic with the chosen model and effort, and the whole turn stays on that model.
 
 The older rules (five decision trees and a median vote) still run on the same answers and are logged for comparison; `JEV_ROUTER_RULES=v1` serves them instead. `jev-router golden` scores both on 110 labelled prompts in `tests/golden.jsonl`: v2 puts 98% in the acceptable range (v1: 67%, with 30% sent to too weak a model).
 
@@ -102,4 +103,5 @@ Versions follow [semver](https://semver.org). The current version is in `Cargo.t
 
 ```bash
 cargo test --release
+e2e/run_cache_effort_test.sh     # live, a few cents: Opus effort change with and without per-message effort
 ```
