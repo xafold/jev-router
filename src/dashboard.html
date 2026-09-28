@@ -210,7 +210,12 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space:
 @keyframes flow-h-l { from { background-position: 0% 100%; } to { background-position: 100% 100%; } }
 @keyframes flow-vh-r { from { background-position: 0 100%, 100% 100%; } to { background-position: 0 0, 0% 100%; } }
 @keyframes flow-vh-l { from { background-position: 0 100%, 0% 100%; } to { background-position: 0 0, 100% 100%; } }
-@media (prefers-reduced-motion: reduce) { .flow .stem.on, .flow-in.enter > *, .flow .fcell.on::before, .flow .fcell.on::after { animation: none; } }
+/* .bus rows: an unlit card has no down line, but the bar under it carries the pulse from a lit
+   card further out (.lb = left half lit, .rb = right half lit). */
+.flow .fcell.nodrop::after { border-left: 0; }
+.flow .fcell.lb::before, .flow .fcell.rb::after { border-color: transparent; background: var(--pulse-h) 0 100% / 300% 2px no-repeat border-box; animation: flow-h-r 1.4s linear infinite; }
+.flow .fcell.fl.lb::before, .flow .fcell.fl.rb::after, .flow .fcell.fc.rb::after { animation-name: flow-h-l; }
+@media (prefers-reduced-motion: reduce) { .flow .stem.on, .flow-in.enter > *, .flow .fcell.on::before, .flow .fcell.on::after, .flow .fcell.lb::before, .flow .fcell.rb::after { animation: none; } }
 .final-box span { display: block; font-weight: 400; font-size: 12px; opacity: .9; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
 .kv dt { color: var(--text-2); }
@@ -692,6 +697,16 @@ function animateFlow(fig, id) {
   for (const row of fig.querySelectorAll(".frow")) {
     const cells = [...row.children].filter((c) => c.classList.contains("fcell")), mid = (cells.length - 1) / 2;
     cells.forEach((c, i) => c.classList.add(i < mid ? "fr" : i > mid ? "fl" : "fc"));
+    if (!row.classList.contains("bus")) continue;
+    // A half-bar [a, b] (in cell-center units) is lit when it sits between a lit cell and the center.
+    const lit = cells.flatMap((c, j) => (c.classList.contains("on") ? [j] : []));
+    const between = (a, b) => lit.some((j) => Math.min(j, mid) <= a && b <= Math.max(j, mid));
+    cells.forEach((c, i) => {
+      if (c.classList.contains("on")) return;
+      c.classList.add("nodrop");
+      if (between(i - 0.5, i)) c.classList.add("lb");
+      if (between(i, i + 0.5)) c.classList.add("rb");
+    });
   }
   [...inner.children].forEach((c, i) => c.style.setProperty("--i", i));
   if (flowShown !== id) inner.classList.add("enter");
@@ -762,7 +777,7 @@ function decisionFlowV2(d) {
   const rung = finalOf(d);
   return h("div", { class: "flow", role: "img", "aria-label": (d.why || []).map(reasonSentence).join(" ") },
     h("div", { class: "flow-in" },
-      h("div", { class: "frow" },
+      h("div", { class: "frow bus" },
         box("Request type", [row(INTENT_LABEL[i.choice] || i.choice || "?", (i.confidence ?? 0).toFixed(2), "yes", "Jev's pick and its confidence"), row("runner-up", INTENT_LABEL[i.runner_up] || i.runner_up || "–")], true),
         box("Reasoning", [row("depth", level("depth"), "yes", "0 lookup · 1 straightforward · 2 multi-step · 3 trade-offs or subtle")], true),
         box("Reading", [row("breadth", level("breadth"), "yes", "0 none · 1 one file · 2 several files · 3 much of the repo")], true),
