@@ -8,6 +8,8 @@ Automatic model and effort switching for [Claude Code](https://claude.com/claude
 
 It is cache-aware: in a long conversation it won't switch models when that would throw away the prompt cache.
 
+Those are the models at build time. On each session's first request (and daily after), the proxy asks `GET /v1/models` with your Claude Code credentials and moves each family to its newest model, so a new Sonnet is picked up without a new build. The result is cached in `~/.local/share/claude-router/models.json` and logged in `proxy.log` (`models: ...`). Set `JEV_ROUTER_MODELS=builtin` to stay on the build-time models.
+
 ## Architecture
 
 ```mermaid

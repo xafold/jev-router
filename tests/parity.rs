@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 
 #[test]
 fn matches_python_reference() {
+    // The reference sends the build-time models, not whatever models.json resolved.
+    std::env::set_var("JEV_ROUTER_MODELS", "builtin");
     let fixtures = include_str!("parity.jsonl");
     let mut counts = [0usize; 5];
     for (i, line) in fixtures.lines().enumerate() {
