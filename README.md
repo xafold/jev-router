@@ -3,7 +3,7 @@
 Automatic model and effort switching for [Claude Code](https://claude.com/claude-code). [TypeSafe Jev](https://docs.typesafe.ai) routes each message you send:
 
 - **Haiku 4.5** for small questions;
-- **Sonnet 5** (low, medium or high effort) for everyday work;
+- **Sonnet 5** (low, medium, high or xhigh effort; max when a fix on xhigh fails or you ask for it) for everyday work;
 - **Opus 5.5** (medium, high, xhigh or max effort) for hard or risky work.
 
 It is cache-aware: in a long conversation it won't switch models when that would throw away the prompt cache.
@@ -36,9 +36,9 @@ flowchart LR
 
 Changing the model, or the top-level effort, in the middle of a conversation throws away the prompt cache. The next request then rewrites the whole history at up to 2x the input price. So once a conversation's cache is warm and holds more than 20k tokens:
 
-- **Downgrades keep the current model.** Leaving Opus becomes Opus medium instead, since Opus 5.5 cache reads cost the same as Sonnet 5's.
+- **Downgrades go ahead only when they pay for themselves:** the cheaper model's cache reads and output must earn back the rewrite within 5 requests, assuming ~600 output tokens per request. Sonnet 5 -> Haiku breaks even near 27k cached tokens, Opus 5.5 -> Haiku near 82k. Otherwise the model stays: Opus 5.5 and Sonnet 5.5 drop to their lowest effort (Opus medium, Sonnet low) instead, other models keep the current rung.
 - **Upgrades go ahead only when they're worth it:** the rewrite costs $0.25 or less, the conversation is leaving Haiku, or a safety rule or a model you named asks for it.
-- **Opus 5.5 effort moves freely.** Each change goes in a per-message effort system message (beta `mid-conversation-output-config-2026-07-01`), which keeps the cache. Set `JEV_ROUTER_EFFORT_MESSAGES=off` to turn this off.
+- **Opus 5.5 and Sonnet 5.5 effort moves freely.** Each change goes in a per-message effort system message (beta `mid-conversation-output-config-2026-07-01`), which keeps the cache. The check uses the model actually served, so Sonnet 5 (no per-message effort) still pays a rewrite; so does Sonnet 5.5 when Claude Code sends `between_tools` thinking, which the API rejects with an effort change. Set `JEV_ROUTER_EFFORT_MESSAGES=off` to turn this off.
 
 How the proxy tracks it:
 - The cache size is the prompt size the API reported for the conversation's last request.
@@ -47,7 +47,7 @@ How the proxy tracks it:
 
 In a 4-turn A/B run with the same prompts, cache writes fell from 75k to 16k tokens and the cost from $0.32 to $0.22.
 
-**Older rules (v1):** five decision trees and a median vote, with the older "no downgrade past 20k tokens" cache rule. They run on the same answers and are logged for comparison; `JEV_ROUTER_RULES=v1` serves them instead. `jev-router golden` scores both on 110 labelled prompts in `tests/golden.jsonl`: v2 puts 98% in the acceptable range, v1 67% (with 30% sent to too weak a model).
+**Older rules (v1):** five decision trees and a median vote, with the older "no downgrade past 20k tokens" cache rule. They run on the same answers and are logged for comparison; `JEV_ROUTER_RULES=v1` serves them instead. `jev-router golden` scores both on 110 labelled prompts in `tests/golden.jsonl`: v2 puts 96% in the acceptable range, v1 67% (with 30% sent to too weak a model).
 
 **What goes to api.typesafe.ai:**
 - your new message;

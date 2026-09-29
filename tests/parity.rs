@@ -4,7 +4,7 @@
 use jev_router::autotune::{choose, Case};
 use jev_router::jev::clip;
 use jev_router::proxy::{apply_rung, fresh_prompt, history_of};
-use jev_router::router::{rank_of, route, route_with, Tuning};
+use jev_router::router::{rank_of, route, route_with, Tuning, V1_LADDER};
 use serde_json::{json, Value};
 
 #[test]
@@ -75,9 +75,10 @@ fn matches_python_reference() {
                     .iter()
                     .map(|c| Case {
                         answers: c["answers"].as_object().unwrap().clone(),
-                        previous: c["previous"].as_u64().map(|p| p as usize),
+                        // Fixtures index the 8-rung ladder the reference has.
+                        previous: c["previous"].as_u64().map(|p| V1_LADDER[p as usize]),
                         context: c["context"].as_u64().unwrap(),
-                        rated: c["rated"].as_u64().unwrap() as usize,
+                        rated: V1_LADDER[c["rated"].as_u64().unwrap() as usize],
                         label: c["label"].as_str().unwrap().to_string(),
                     })
                     .collect();

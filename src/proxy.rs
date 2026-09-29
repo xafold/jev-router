@@ -7,7 +7,7 @@
 //! routed; its tool loop reuses that rung. HTTP/1.1 is served by hand so every SSE chunk is
 //! flushed as it arrives; upstream is ureq (rustls, connection pool).
 
-use crate::router::{rank_of, H, LADDER, PER_MESSAGE_EFFORT_MODELS, S_MED};
+use crate::router::{per_message_effort, rank_of, H, LADDER, S_MED};
 use crate::util::{local_hms, utc_iso};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -43,12 +43,12 @@ const HOP_HEADERS: [&str; 9] = [
 ];
 /// Models that accept mid-conversation `role: "system"` messages and tool_addition/removal
 /// blocks. Claude Code sends both to a model id it doesn't know; the others return 400.
-const SYSTEM_MESSAGE_MODELS: [&str; 1] = ["claude-opus-5-5"];
+const SYSTEM_MESSAGE_MODELS: [&str; 2] = ["claude-opus-5-5", "claude-sonnet-5-5"];
 
 /// Beta for effort-only `role: "system"` messages (per-message effort).
 const EFFORT_BETA: &str = "mid-conversation-output-config-2026-07-01";
 /// Set when the API rejects the beta (e.g. not enabled for the account): top-level effort
-/// from then on, which rebuilds the cache on each Opus effort change.
+/// from then on, which rebuilds the cache on each effort change.
 static EFFORT_BETA_REJECTED: AtomicBool = AtomicBool::new(false);
 
 fn effort_messages_on() -> bool {
@@ -310,8 +310,9 @@ pub fn anchor_cache_before_system(body: &mut Value) {
 /// thinking + effort), so fields the target model rejects must go.
 pub fn apply_rung(body: &mut Value, rank: usize) {
     let rung = &LADDER[rank];
-    body["model"] = json!(crate::models::resolve(rung.model));
-    if SYSTEM_MESSAGE_MODELS.contains(&rung.model) {
+    let model = crate::models::resolve(rung.model);
+    body["model"] = json!(model);
+    if SYSTEM_MESSAGE_MODELS.contains(&model.as_str()) {
         anchor_cache_before_system(body);
     } else {
         fold_system_messages(body);
@@ -362,7 +363,7 @@ fn is_effort_message(m: &Value) -> bool {
     m["role"] == "system" && m["content"] == json!([]) && m.get("output_config").is_some()
 }
 
-/// Keep the cache across Opus effort changes: the top-level effort stays at `anchor` (what
+/// Keep the cache across effort changes (Opus 5.5, Sonnet 5.5): the top-level effort stays at `anchor` (what
 /// the cache was written with) and each change is an effort-only system message inserted
 /// before the user turn it applies to. `marks` are (index in Claude Code's messages, effort),
 /// ascending, re-inserted on every request so the prefix stays byte-identical.
@@ -652,10 +653,12 @@ impl Router {
             AUX_RUNG
         });
         apply_rung(body, rung);
-        let model = LADDER[rung].model;
+        // Sonnet 5.5 with between_tools thinking 400s on an effort change mid-conversation.
+        let per_message =
+            per_message_effort(LADDER[rung].model) && body["thinking"]["type"] != "between_tools";
         let mut via_message = false;
         match LADDER[rung].effort {
-            Some(effort) if effort_messages_on() && PER_MESSAGE_EFFORT_MODELS.contains(&model) => {
+            Some(effort) if effort_messages_on() && per_message => {
                 if !warm || state.effort_anchor.is_none() {
                     state.effort_anchor = Some(effort);
                     state.effort_marks.clear();
