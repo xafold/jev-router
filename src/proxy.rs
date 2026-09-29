@@ -310,7 +310,7 @@ pub fn anchor_cache_before_system(body: &mut Value) {
 /// thinking + effort), so fields the target model rejects must go.
 pub fn apply_rung(body: &mut Value, rank: usize) {
     let rung = &LADDER[rank];
-    body["model"] = json!(rung.model);
+    body["model"] = json!(crate::models::resolve(rung.model));
     if SYSTEM_MESSAGE_MODELS.contains(&rung.model) {
         anchor_cache_before_system(body);
     } else {
@@ -454,13 +454,7 @@ impl Router {
 
     pub fn debug(&self, line: &str) {
         let _guard = self.log_lock.lock().unwrap_or_else(|e| e.into_inner());
-        if let Ok(mut f) = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&self.debug_log)
-        {
-            let _ = writeln!(f, "{} {line}", local_hms());
-        }
+        append_log(&self.debug_log, line);
     }
 
     /// One line per Claude request in usage.jsonl: the tag from `rewrite` plus the token
@@ -686,7 +680,8 @@ impl Router {
         if prompt.is_some() {
             self.status(
                 session.as_deref(),
-                json!({"rung": LADDER[rung].name, "decision": state.decision}),
+                json!({"rung": crate::models::label(LADDER[rung].model, LADDER[rung].effort),
+                       "decision": state.decision}),
             );
         }
         let kind = match (prompt.is_some(), tools) {
@@ -694,7 +689,7 @@ impl Router {
             (false, true) => "pinned",
             (false, false) => "aux",
         };
-        let tag = json!({"kind": kind, "model": LADDER[rung].model, "rung": LADDER[rung].name,
+        let tag = json!({"kind": kind, "model": crate::models::resolve(LADDER[rung].model), "rung": LADDER[rung].name,
                          "decision": state.decision, "conversation": key, "session_id": session});
         self.store(&key, state);
         let note = format!(
@@ -751,6 +746,12 @@ fn read_chunked(reader: &mut impl BufRead) -> io::Result<Vec<u8>> {
         body.resize(start + size, 0);
         reader.read_exact(&mut body[start..])?;
         reader.read_line(&mut line)?;
+    }
+}
+
+fn append_log(path: &PathBuf, line: &str) {
+    if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(path) {
+        let _ = writeln!(f, "{} {line}", local_hms());
     }
 }
 
@@ -848,6 +849,8 @@ fn forward(
     // The rewritten body, kept while it carries effort-only system messages (needs the beta).
     let mut effort_body = None;
     if path.starts_with("/v1/messages") && !body.is_empty() {
+        let log = router.debug_log.clone();
+        crate::models::refresh_if_stale(agent, upstream, headers, move |l| append_log(&log, l));
         note = Some(match serde_json::from_slice::<Value>(&body) {
             Ok(mut data) if data.is_object() => {
                 // A bug in the rewrite must never take the session down: forward as-is.
