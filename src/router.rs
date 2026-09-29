@@ -12,7 +12,7 @@ pub struct Rung {
 }
 
 /// Cheapest -> strongest.
-pub const LADDER: [Rung; 8] = [
+pub const LADDER: [Rung; 10] = [
     Rung {
         name: "haiku-4.5",
         model: "claude-haiku-4-5",
@@ -32,6 +32,16 @@ pub const LADDER: [Rung; 8] = [
         name: "sonnet-5/high",
         model: "claude-sonnet-5",
         effort: Some("high"),
+    },
+    Rung {
+        name: "sonnet-5/xhigh",
+        model: "claude-sonnet-5",
+        effort: Some("xhigh"),
+    },
+    Rung {
+        name: "sonnet-5/max",
+        model: "claude-sonnet-5",
+        effort: Some("max"),
     },
     Rung {
         name: "opus-5.5/medium",
@@ -58,10 +68,26 @@ pub const H: usize = 0;
 pub const S_LOW: usize = 1;
 pub const S_MED: usize = 2;
 pub const S_HIGH: usize = 3;
-pub const O_MED: usize = 4;
-pub const O_HIGH: usize = 5;
-pub const O_XHIGH: usize = 6;
-pub const O_MAX: usize = 7;
+pub const S_XHIGH: usize = 4;
+pub const S_MAX: usize = 5;
+pub const O_MED: usize = 6;
+pub const O_HIGH: usize = 7;
+pub const O_XHIGH: usize = 8;
+pub const O_MAX: usize = 9;
+
+/// The ladder v1 was written for (no Sonnet xhigh/max): its steps and spreads count these.
+pub const V1_LADDER: [usize; 8] = [H, S_LOW, S_MED, S_HIGH, O_MED, O_HIGH, O_XHIGH, O_MAX];
+
+/// Position on V1_LADDER; Sonnet xhigh/max count as Sonnet high.
+fn v1_pos(rank: usize) -> usize {
+    V1_LADDER.iter().rposition(|&r| r <= rank).unwrap_or(0)
+}
+
+/// `delta` v1 steps from `rank`, clamped to the v1 ladder.
+fn v1_step(rank: usize, delta: i32) -> usize {
+    let pos = (v1_pos(rank) as i32 + delta).clamp(0, V1_LADDER.len() as i32 - 1);
+    V1_LADDER[pos as usize]
+}
 
 pub fn rank_of(name: &str) -> Option<usize> {
     LADDER.iter().position(|r| r.name == name)
@@ -82,24 +108,35 @@ pub const DOWNGRADE_MAX_CONTEXT_TOKENS: u64 = 20_000;
 /// this ($). Sonnet 5 -> Opus 5.5 passes up to ~52k cached tokens, a Sonnet effort raise
 /// up to ~109k. Safety/failure floors and a model the user names always go ahead.
 pub const UPGRADE_REBUILD_BUDGET_USD: f64 = 0.25;
+/// v2: a downgrade that rebuilds a warm cache goes ahead when the cheaper rung earns the
+/// rebuild back within this many requests (usage.jsonl: ~5 requests per turn).
+pub const DOWNGRADE_PAYBACK_REQUESTS: f64 = 5.0;
+/// Output tokens per request, thinking included (usage.jsonl mean ~650).
+pub const OUTPUT_TOKENS_PER_REQUEST: f64 = 600.0;
 /// Models that take per-message effort (beta mid-conversation-output-config-2026-07-01):
 /// their effort changes ride in a `role: "system"` message and keep the cache. On every
-/// other model a top-level effort change invalidates the messages cache like a model switch.
-pub const PER_MESSAGE_EFFORT_MODELS: [&str; 1] = ["claude-opus-5-5"];
+/// other model (Sonnet 5, Haiku 4.5) a top-level effort change invalidates the messages
+/// cache like a model switch. Served ids, after models::resolve.
+pub const PER_MESSAGE_EFFORT_MODELS: [&str; 2] = ["claude-opus-5-5", "claude-sonnet-5-5"];
 
-/// ($/1M input, $/1M cache read) for the ladder's models.
-fn prices(model: &str) -> (f64, f64) {
+/// Does the model a ladder id runs on now take per-message effort?
+pub fn per_message_effort(builtin: &str) -> bool {
+    PER_MESSAGE_EFFORT_MODELS.contains(&crate::models::resolve(builtin).as_str())
+}
+
+/// ($/1M input, $/1M cache read, $/1M output) for the ladder's models.
+fn prices(model: &str) -> (f64, f64, f64) {
     match model {
-        "claude-opus-5-5" => (4.0, 0.20),
-        "claude-sonnet-5" => (2.0, 0.20),
-        _ => (1.0, 0.10),
+        "claude-opus-5-5" => (4.0, 0.20, 20.0),
+        "claude-sonnet-5" => (2.0, 0.20, 10.0),
+        _ => (1.0, 0.10, 5.0),
     }
 }
 
 /// Does going from `previous` to `next` keep the prompt cache?
 pub fn keeps_cache(previous: usize, next: usize) -> bool {
     let (a, b) = (&LADDER[previous], &LADDER[next]);
-    a.model == b.model && (a.effort == b.effort || PER_MESSAGE_EFFORT_MODELS.contains(&b.model))
+    a.model == b.model && (a.effort == b.effort || per_message_effort(b.model))
 }
 
 /// Extra $ for rewriting `cached` tokens on `next` (5-minute write, 1.25x input) instead of
@@ -108,6 +145,14 @@ pub fn rebuild_cost(previous: usize, next: usize, cached: u64) -> f64 {
     let write = prices(LADDER[next].model).0 * 1.25;
     let read = prices(LADDER[previous].model).1;
     cached as f64 * (write - read) / 1e6
+}
+
+/// $ saved over DOWNGRADE_PAYBACK_REQUESTS on `next` instead of `previous`: cheaper cache
+/// reads plus cheaper output. An effort drop on the same model saves nothing here.
+pub fn downgrade_savings(previous: usize, next: usize, cached: u64) -> f64 {
+    let (from, to) = (prices(LADDER[previous].model), prices(LADDER[next].model));
+    let per_request = cached as f64 * (from.1 - to.1) + OUTPUT_TOKENS_PER_REQUEST * (from.2 - to.2);
+    DOWNGRADE_PAYBACK_REQUESTS * per_request / 1e6
 }
 
 /// State is {"history": [earlier turns], "latest": "<new user message>"}. Every question is
@@ -268,7 +313,9 @@ pub fn meta() -> Value {
         "forest": forest,
         "thresholds": {"noul_yes": NOUL_YES, "borderline": BORDERLINE, "clear_yes": CLEAR_YES, "clear_no": CLEAR_NO,
                        "disagree_spread": DISAGREE_SPREAD, "downgrade_max_context_tokens": DOWNGRADE_MAX_CONTEXT_TOKENS,
-                       "upgrade_rebuild_budget_usd": UPGRADE_REBUILD_BUDGET_USD},
+                       "upgrade_rebuild_budget_usd": UPGRADE_REBUILD_BUDGET_USD,
+                       "downgrade_payback_requests": DOWNGRADE_PAYBACK_REQUESTS,
+                       "output_tokens_per_request": OUTPUT_TOKENS_PER_REQUEST},
     })
 }
 
@@ -347,12 +394,12 @@ pub fn route_with(
     }
     ranks.sort_unstable();
     let median = ranks[ranks.len() / 2];
-    let spread = ranks[ranks.len() - 1] - ranks[0];
+    let spread = v1_pos(ranks[ranks.len() - 1]) - v1_pos(ranks[0]);
     let mut rank = median;
     let mut why = vec![format!("median of votes: {}", LADDER[median].name)];
 
     if spread >= tuning.disagree_spread {
-        rank = (rank + 1).min(LADDER.len() - 1);
+        rank = v1_step(rank, 1);
         why.push(format!(
             "trees disagree (spread {spread} rungs): +1 -> {}",
             LADDER[rank].name
@@ -360,7 +407,7 @@ pub fn route_with(
     }
 
     if tuning.offset != 0 {
-        rank = (rank as i32 + tuning.offset).clamp(0, LADDER.len() as i32 - 1) as usize;
+        rank = v1_step(rank, tuning.offset);
         why.push(format!(
             "auto-tuning: {:+} -> {}",
             tuning.offset, LADDER[rank].name
@@ -392,7 +439,7 @@ pub fn route_with(
     }
     if let Some(previous) = previous_rung {
         if noul(answers, "prior_failed") > CLEAR_YES {
-            let floor = (previous + 1).min(LADDER.len() - 1);
+            let floor = v1_step(previous, 1);
             if rank < floor {
                 rank = floor;
                 why.push(format!(
@@ -616,7 +663,9 @@ pub fn requested_rung(text: &str) -> Option<usize> {
     let rung = match (caps[1].to_lowercase().as_str(), effort.as_deref()) {
         ("haiku", _) => H,
         ("sonnet", Some("low")) => S_LOW,
-        ("sonnet", Some("high" | "xhigh" | "max")) => S_HIGH,
+        ("sonnet", Some("high")) => S_HIGH,
+        ("sonnet", Some("xhigh")) => S_XHIGH,
+        ("sonnet", Some("max")) => S_MAX,
         ("sonnet", _) => S_MED,
         ("opus", Some("low" | "medium")) => O_MED,
         ("opus", Some("xhigh")) => O_XHIGH,
@@ -630,9 +679,9 @@ pub fn requested_rung(text: &str) -> Option<usize> {
 fn to_ladder(tier: usize, effort: usize) -> usize {
     match tier {
         TIER_HAIKU => H,
-        // Sonnet has no xhigh/max: two steps past high means Opus (golden set: one step
-        // past high sent too much to Opus for no gain).
-        TIER_SONNET => [S_LOW, S_MED, S_HIGH, S_HIGH, O_MED][effort.min(EFFORT_MAX)],
+        // Two steps past high means Opus: on the golden set, Sonnet max there under-routed
+        // security reviews. Sonnet max comes from a failed fix on xhigh or a named model.
+        TIER_SONNET => [S_LOW, S_MED, S_HIGH, S_XHIGH, O_MED][effort.min(EFFORT_MAX)],
         _ => [O_MED, O_MED, O_HIGH, O_XHIGH, O_MAX][effort.min(EFFORT_MAX)],
     }
 }
@@ -649,7 +698,7 @@ fn base_of(key: &str) -> (usize, usize) {
 fn next_tier(rank: usize) -> usize {
     match rank {
         H => S_MED,
-        S_LOW..=S_HIGH => O_MED,
+        S_LOW..=S_MAX => O_MED,
         r => (r + 2).min(O_MAX),
     }
 }
@@ -847,10 +896,10 @@ pub fn route_v2(
 
 /// A model switch rewrites the whole cache; so does a top-level effort change (only the
 /// messages part, but that is the bulk). Past DOWNGRADE_MAX_CONTEXT_TOKENS of warm cache:
-/// - Opus 5.5 effort moves freely (per-message effort keeps the cache);
-/// - leaving Opus for a cheaper model becomes Opus medium: Opus 5.5 cache reads cost the
-///   same as Sonnet 5's, so the switch would only buy a rewrite;
-/// - other downgrades keep the previous rung;
+/// - effort moves freely on per-message-effort models (Opus 5.5, Sonnet 5.5);
+/// - downgrades go ahead when the rebuild pays back within DOWNGRADE_PAYBACK_REQUESTS;
+/// - otherwise a per-message-effort model drops to its lowest effort instead (Opus medium,
+///   Sonnet low), and other downgrades keep the previous rung;
 /// - upgrades go ahead when the rebuild is cheap, leave Haiku, or a hard rule asks.
 fn cache_guard(previous: usize, rank: usize, cached: u64, forced: bool) -> Option<(usize, String)> {
     if forced || cached <= DOWNGRADE_MAX_CONTEXT_TOKENS || keeps_cache(previous, rank) {
@@ -861,15 +910,23 @@ fn cache_guard(previous: usize, rank: usize, cached: u64, forced: bool) -> Optio
     if rank > previous && (previous == H || cost <= UPGRADE_REBUILD_BUDGET_USD) {
         return None;
     }
-    let kept = if rank < previous && PER_MESSAGE_EFFORT_MODELS.contains(&LADDER[previous].model) {
-        O_MED
+    let savings = downgrade_savings(previous, rank, cached).max(0.0);
+    if rank < previous && cost <= savings {
+        return None;
+    }
+    let model = LADDER[previous].model;
+    let kept = if rank < previous && per_message_effort(model) {
+        LADDER
+            .iter()
+            .position(|r| r.model == model)
+            .unwrap_or(previous)
     } else {
         previous
     };
     Some((
         kept,
         format!(
-            "~{cached} cached tokens: {} would rebuild the cache (~${cost:.2}) -> {}",
+            "~{cached} cached tokens: {} would rebuild the cache (~${cost:.2}, saves ~${savings:.2}) -> {}",
             name(rank),
             name(kept)
         ),
@@ -1105,6 +1162,7 @@ mod tests {
         assert_eq!(rung_v2(&c, None, 0, None), name(O_MED));
         let failed = v2("debug_fix", 0.9, 1.5, 1.0, &[("prior_failed", 0.9)]);
         assert_eq!(rung_v2(&failed, Some(S_MED), 0, None), name(S_HIGH));
+        assert_eq!(rung_v2(&failed, Some(S_XHIGH), 0, None), name(S_MAX));
         let again = v2(
             "debug_fix",
             0.9,
@@ -1116,7 +1174,7 @@ mod tests {
         assert_eq!(rung_v2(&again, Some(O_HIGH), 0, None), name(O_MAX));
         // Cache guard: a long Opus conversation stays on Opus, only effort drops.
         let small = v2("chat", 0.9, 0.0, 0.0, &[]);
-        assert_eq!(rung_v2(&small, Some(O_HIGH), 50_000, None), name(O_MED));
+        assert_eq!(rung_v2(&small, Some(O_HIGH), 120_000, None), name(O_MED));
         assert_eq!(rung_v2(&small, Some(O_HIGH), 5_000, None), name(H));
     }
 
@@ -1142,6 +1200,12 @@ mod tests {
         assert_eq!(rung_v2(&design, Some(S_MED), 30_000, None), name(O_XHIGH));
         assert_eq!(rung_v2(&design, Some(S_MED), 0, None), name(O_XHIGH));
         assert_eq!(rung_v2(&chat, Some(S_HIGH), 0, None), name(H));
+        // A downgrade goes ahead once it pays back the rebuild within DOWNGRADE_PAYBACK_REQUESTS.
+        // Sonnet -> Haiku breaks even near 27k cached tokens, Opus -> Haiku near 82k.
+        assert!((downgrade_savings(S_MED, H, 55_000) - 0.0425).abs() < 1e-9);
+        assert_eq!(rung_v2(&chat, Some(S_MED), 25_000, None), name(H));
+        assert_eq!(rung_v2(&chat, Some(S_MED), 55_000, None), name(S_MED));
+        assert_eq!(rung_v2(&chat, Some(O_XHIGH), 60_000, None), name(H));
         // Hard rules win over the cache: safety floor, repeated failure, a named model.
         let risky = v2("implement", 0.9, 1.0, 1.0, &[("security", 0.9)]);
         assert_eq!(rung_v2(&risky, Some(S_MED), 150_000, None), name(O_MED));
@@ -1187,6 +1251,8 @@ mod tests {
             Some(O_HIGH)
         );
         assert_eq!(requested_rung("use sonnet at low effort"), Some(S_LOW));
+        assert_eq!(requested_rung("switch to sonnet 5.5 xhigh"), Some(S_XHIGH));
+        assert_eq!(requested_rung("use sonnet max"), Some(S_MAX));
         assert_eq!(requested_rung("Use Haiku for this one"), Some(H));
         assert_eq!(requested_rung("run it on opus max"), Some(O_MAX));
         assert_eq!(requested_rung("don't use haiku for this"), None);
